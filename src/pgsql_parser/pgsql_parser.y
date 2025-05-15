@@ -1,9 +1,11 @@
+/* src/pgsql_parser/pgsql_parser.y */
 %code requires {
     namespace PgsqlParser {
       struct AstNode;
     }
     #include <string> 
 }
+
 
 %{ // C PROLOGUE - This code is now part of a C++ compilation unit
 #include "pgsql_parser/pgsql_parser.h" // For PgsqlParser::Parser context & yyscan_t
@@ -36,15 +38,14 @@ int pgsql_yylex(union PGSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, PgsqlPars
     PgsqlParser::AstNode* node_val;
 }
 
-/* Declare tokens from the lexer */
 %token TOKEN_SELECT TOKEN_FROM TOKEN_INSERT TOKEN_INTO TOKEN_VALUES
 %token TOKEN_LPAREN TOKEN_RPAREN TOKEN_SEMICOLON
+%token TOKEN_ASTERISK
 
 %token <str_val> TOKEN_QUIT
 %token <str_val> TOKEN_IDENTIFIER
 %token <str_val> TOKEN_STRING_LITERAL
 
-/* Declare non-terminals and the type of their semantic value */
 %type <node_val> statement
 %type <node_val> simple_statement
 %type <node_val> command_statement
@@ -53,15 +54,23 @@ int pgsql_yylex(union PGSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, PgsqlPars
 %type <node_val> identifier_node
 %type <node_val> string_literal_node
 %type <node_val> value_for_insert
+%type <node_val> select_list_item
+%type <node_val> optional_semicolon /* <<< NEW TYPE (though it produces no value for AST) */
 
 
-%start query_list /* The start symbol of our grammar */
+%start query_list
 
 %%
 
 query_list:
     /* empty */ { if (parser_context) parser_context->internal_set_ast(nullptr); }
     | query_list statement { /* Manages last statement's AST. */ }
+    ;
+
+/* NEW RULE for optional semicolon */
+optional_semicolon:
+    TOKEN_SEMICOLON { $$ = nullptr; /* Or some placeholder if needed, but usually not for this */ }
+    | /* empty */   { $$ = nullptr; } /* Allows nothing, produces no AST node for itself */
     ;
 
 statement:
@@ -75,9 +84,10 @@ simple_statement:
     ;
 
 command_statement:
-    TOKEN_QUIT TOKEN_SEMICOLON {
+    TOKEN_QUIT optional_semicolon {
         $$ = new PgsqlParser::AstNode(PgsqlParser::NodeType::NODE_COMMAND, std::move(*$1));
         delete $1;
+        // $2 (optional_semicolon) doesn't contribute a meaningful value here
     }
     ;
 
@@ -99,11 +109,19 @@ string_literal_node:
     }
     ;
 
+select_list_item:
+    identifier_node { $$ = $1; } 
+    | TOKEN_ASTERISK { 
+        $$ = new PgsqlParser::AstNode(PgsqlParser::NodeType::NODE_ASTERISK, "*"); 
+    }
+    ;
+
 select_statement:
-    TOKEN_SELECT identifier_node TOKEN_FROM identifier_node TOKEN_SEMICOLON {
+    TOKEN_SELECT select_list_item TOKEN_FROM identifier_node optional_semicolon { /* MODIFIED */
         $$ = new PgsqlParser::AstNode(PgsqlParser::NodeType::NODE_SELECT_STATEMENT); 
         $$->addChild($2); 
         $$->addChild($4); 
+        // $5 (optional_semicolon) doesn't contribute
     }
     ;
 
@@ -112,10 +130,11 @@ value_for_insert:
     ;
 
 insert_statement:
-    TOKEN_INSERT TOKEN_INTO identifier_node TOKEN_VALUES TOKEN_LPAREN value_for_insert TOKEN_RPAREN TOKEN_SEMICOLON {
+    TOKEN_INSERT TOKEN_INTO identifier_node TOKEN_VALUES TOKEN_LPAREN value_for_insert TOKEN_RPAREN optional_semicolon {
         $$ = new PgsqlParser::AstNode(PgsqlParser::NodeType::NODE_INSERT_STATEMENT); 
         $$->addChild($3); 
         $$->addChild($6); 
+        // $8 (optional_semicolon) doesn't contribute
     }
     ;
 
@@ -123,3 +142,4 @@ insert_statement:
 
 // pgsql_yyerror is defined in pgsql_parser.cpp with C linkage,
 // and declared in pgsql_parser.h. Bison will generate a call to it.
+

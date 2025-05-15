@@ -46,6 +46,8 @@
                     return TOKEN_STRING_LITERAL; 
                   }
 
+"*"               { return TOKEN_ASTERISK; }
+
 "("               { return TOKEN_LPAREN; }
 ")"               { return TOKEN_RPAREN; }
 ";"               { return TOKEN_SEMICOLON; }

@@ -1,3 +1,4 @@
+// include/pgsql_parser/pgsql_ast.h
 #ifndef PGSQL_PARSER_AST_H
 #define PGSQL_PARSER_AST_H
 
@@ -6,7 +7,7 @@
 #include <iostream>
 #include <algorithm> // For potential string manipulations
 
-namespace PgsqlParser { // Changed namespace
+namespace PgsqlParser {
 
 // Enum for different types of AST nodes
 enum class NodeType {
@@ -15,7 +16,8 @@ enum class NodeType {
     NODE_SELECT_STATEMENT,
     NODE_INSERT_STATEMENT,
     NODE_IDENTIFIER,
-    NODE_STRING_LITERAL
+    NODE_STRING_LITERAL,
+    NODE_ASTERISK // New node type for '*' in SELECT
 };
 
 // Basic AST Node
@@ -57,6 +59,7 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_INSERT_STATEMENT: type_str = "INSERT_STMT"; break;
         case NodeType::NODE_IDENTIFIER: type_str = "IDENTIFIER"; break;
         case NodeType::NODE_STRING_LITERAL: type_str = "STRING_LITERAL"; break;
+        case NodeType::NODE_ASTERISK: type_str = "ASTERISK"; break; // Handle new type
         default: type_str = "UNHANDLED_TYPE(" + std::to_string(static_cast<int>(node->type)) + ")"; break;
     }
     std::cout << "Type: " << type_str << ", Value: '" << node->value << "'" << std::endl;

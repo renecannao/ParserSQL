@@ -10,8 +10,10 @@ int main() {
         "SELECT name FROM users;",
         "INSERT INTO products VALUES ('a new gadget');",
         "QUIT;",
-        "SELECT * FROM;", 
-        "INSERT INTO logs VALUES (no_quotes_here);" 
+        "SELECT * FROM tablenameA;",
+        "SELECT * FROM tablenameB",
+        "SELECT * FROM;",
+        "INSERT INTO logs VALUES (no_quotes_here);"
     };
 
     for (const auto& query : queries) {
