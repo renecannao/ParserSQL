@@ -30,3 +30,12 @@
 *.exe
 *.out
 *.app
+
+
+pgsql_example
+libpgsqlparser.a
+src/pgsql_parser/pgsql_parser.tab.c
+src/pgsql_parser/pgsql_parser.tab.h
+src/pgsql_parser/pgsql_lexer.yy.c
+src/pgsql_parser/pgsql_parser.output
+src/pgsql_parser/pgsql_parser.report
