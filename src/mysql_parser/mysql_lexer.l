@@ -38,42 +38,52 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
   "INSERT"              { return TOKEN_INSERT; }
   "INTO"                { return TOKEN_INTO; }
   "VALUES"              { return TOKEN_VALUES; }
+  "QUIT"                { yylval_param->str_val = new std::string(yytext); return TOKEN_QUIT; }
 
-  "QUIT"                { 
-                          yylval_param->str_val = new std::string(yytext); 
-                          return TOKEN_QUIT; 
+  "SET"                 { return TOKEN_SET; }
+  "NAMES"               { return TOKEN_NAMES; }
+  "CHARACTER"           { return TOKEN_CHARACTER; }
+  "GLOBAL"              { return TOKEN_GLOBAL; }
+  "SESSION"             { return TOKEN_SESSION; }
+  "PERSIST"             { return TOKEN_PERSIST; }
+  "PERSIST_ONLY"        { return TOKEN_PERSIST_ONLY;}
+  "DEFAULT"             { return TOKEN_DEFAULT; }
+  "COLLATE"             { return TOKEN_COLLATE; }
+
+  "`"                   { yylval_param->str_val = new std::string(); BEGIN(BTIDENT); }
+
+  "@@global."           { return TOKEN_GLOBAL_VAR_PREFIX; }
+  "@@session."          { return TOKEN_SESSION_VAR_PREFIX; }
+  "@@local."            { return TOKEN_SESSION_VAR_PREFIX; } /* Alias for session */
+  "@@persisted."        { /* Placeholder if you add specific handling */ return TOKEN_PERSIST_VAR_PREFIX; }
+  "@@"                  { return TOKEN_DOUBLESPECIAL; }
+  "@"                   { return TOKEN_SPECIAL; }
+
+  [a-zA-Z_][a-zA-Z0-9_]* { /* Does not include hyphen for now */
+                          yylval_param->str_val = new std::string(yytext);
+                          return TOKEN_IDENTIFIER;
                         }
 
-  "`"                   { 
-                          yylval_param->str_val = new std::string(); /* Start empty for backticked id */
-                          BEGIN(BTIDENT); 
-                        }
-  [a-zA-Z_][a-zA-Z0-9_]* { 
-                          yylval_param->str_val = new std::string(yytext); 
-                          return TOKEN_IDENTIFIER; 
-                        }
-  
-  "'"                   { 
-                          yylval_param->str_val = new std::string("'"); 
-                          BEGIN(SQSTRING); 
-                        }
-  "\""                  { 
-                          yylval_param->str_val = new std::string("\""); 
-                          BEGIN(DQSTRING);
-                        }
+  "'"                   { yylval_param->str_val = new std::string("'"); BEGIN(SQSTRING); }
+  "\""                  { yylval_param->str_val = new std::string("\""); BEGIN(DQSTRING); }
 
   "*"                   { return TOKEN_ASTERISK; }
   "("                   { return TOKEN_LPAREN; }
   ")"                   { return TOKEN_RPAREN; }
   ";"                   { return TOKEN_SEMICOLON; }
+  "="                   { return TOKEN_EQUAL; }
+  "."                   { return TOKEN_DOT; }
+  ","                   { return TOKEN_COMMA; }
 
-  .                     { 
+  [0-9]+("."[0-9]+)?    { yylval_param->str_val = new std::string(yytext); return TOKEN_NUMBER_LITERAL;}
+
+  .                     {
                           char err_msg[100];
                           snprintf(err_msg, sizeof(err_msg), "Lexer: Unknown character: '%s'", yytext);
-                          if (parser_context) { 
+                          if (parser_context) {
                               parser_context->internal_add_error(err_msg);
                           } else {
-                              fprintf(stderr, "%s\n", err_msg); 
+                              fprintf(stderr, "%s\n", err_msg);
                           }
                         }
 }
@@ -91,7 +101,7 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
   "''"                  { *(yylval_param->str_val) += "'"; }
   "'"                   { *(yylval_param->str_val) += "'"; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
-  <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated single-quoted string"); BEGIN(INITIAL); return YY_NULL; /* Return 0 or YY_NULL for EOF/error */ }
+  <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated single-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <DQSTRING>{
@@ -104,15 +114,12 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
 }
 
 <BTIDENT>{
-  "`"                   { BEGIN(INITIAL); return TOKEN_IDENTIFIER; }
+  "`"                   { BEGIN(INITIAL); return TOKEN_IDENTIFIER; } // Returns the accumulated string
   "``"                  { *(yylval_param->str_val) += '`'; }
   [^`\n]+               { *(yylval_param->str_val) += yytext; }
-  \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); /* No explicit return, lexer will find next token or error */ }
+  \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); /* No explicit return */ }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated backticked identifier"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 %%
-
-// yywrap is not strictly needed due to %option noyywrap
-// int mysql_yywrap(yyscan_t scanner) { return 1; }
 

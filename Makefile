@@ -36,6 +36,7 @@ MYSQL_PARSER_INCLUDE_DIR = $(INCLUDE_DIR)/mysql_parser
 MYSQL_TARGET_LIB_NAME = mysqlparser
 MYSQL_TARGET_LIB = $(PROJECT_ROOT)/lib$(MYSQL_TARGET_LIB_NAME).a
 MYSQL_EXAMPLE_EXE = $(PROJECT_ROOT)/mysql_example
+MYSQL_SET_EXAMPLE_EXE = $(PROJECT_ROOT)/set_mysql_example
 
 MYSQL_BISON_C_FILE = mysql_parser.tab.c
 MYSQL_BISON_H_FILE = mysql_parser.tab.h
@@ -48,8 +49,9 @@ MYSQL_FLEX_C = $(MYSQL_PARSER_SRC_DIR)/$(MYSQL_FLEX_C_FILE)
 MYSQL_LIB_OBJS = \
     $(MYSQL_BISON_C:.c=.o) \
     $(MYSQL_FLEX_C:.c=.o) \
-    $(MYSQL_PARSER_SRC_DIR)/mysql_parser.o
+    $(MYSQL_PARSER_SRC_DIR)/mysql_parser.o # Renamed from mysql_sql_parser.o
 MYSQL_EXAMPLE_OBJS = $(PROJECT_ROOT)/examples/main_mysql_example.o
+MYSQL_SET_EXAMPLE_OBJS = $(PROJECT_ROOT)/examples/set_mysql_example.o
 
 
 .PHONY: all clean examples pgsql mysql
@@ -59,7 +61,7 @@ all: pgsql mysql examples
 pgsql: $(PGSQL_TARGET_LIB)
 mysql: $(MYSQL_TARGET_LIB)
 
-examples: $(PGSQL_EXAMPLE_EXE) $(MYSQL_EXAMPLE_EXE)
+examples: $(PGSQL_EXAMPLE_EXE) $(MYSQL_EXAMPLE_EXE) $(MYSQL_SET_EXAMPLE_EXE)
 
 # --- PostgreSQL Rules ---
 $(PGSQL_TARGET_LIB): $(PGSQL_LIB_OBJS)
@@ -97,6 +99,11 @@ $(MYSQL_EXAMPLE_EXE): $(MYSQL_EXAMPLE_OBJS) $(MYSQL_TARGET_LIB)
 	$(LINKER) $(CXXFLAGS) -o $@ $(MYSQL_EXAMPLE_OBJS) -L$(PROJECT_ROOT) -l$(MYSQL_TARGET_LIB_NAME)
 	@echo "Created MySQL example $@"
 
+# Rule for MySQL SET example executable <<< NEW
+$(MYSQL_SET_EXAMPLE_EXE): $(MYSQL_SET_EXAMPLE_OBJS) $(MYSQL_TARGET_LIB)
+	$(LINKER) $(CXXFLAGS) -o $@ $(MYSQL_SET_EXAMPLE_OBJS) -L$(PROJECT_ROOT) -l$(MYSQL_TARGET_LIB_NAME)
+	@echo "Created MySQL SET statement example $@"
+
 $(MYSQL_BISON_H) $(MYSQL_BISON_C): $(MYSQL_PARSER_SRC_DIR)/mysql_parser.y $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h
 	cd $(MYSQL_PARSER_SRC_DIR) && bison -d -v --report=all -o $(MYSQL_BISON_C_FILE) --defines=$(MYSQL_BISON_H_FILE) mysql_parser.y
 
@@ -115,10 +122,14 @@ $(MYSQL_PARSER_SRC_DIR)/mysql_parser.o: $(MYSQL_PARSER_SRC_DIR)/mysql_parser.cpp
 $(PROJECT_ROOT)/examples/main_mysql_example.o: $(PROJECT_ROOT)/examples/main_mysql_example.cpp $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h
 	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
 
+# Rule for MySQL SET example main.o <<< NEW
+$(PROJECT_ROOT)/examples/set_mysql_example.o: $(PROJECT_ROOT)/examples/set_mysql_example.cpp $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h
+	$(CXX) $(CXXFLAGS) $(CPPFLAGS) -c $< -o $@
+
 
 clean:
-	rm -f $(PGSQL_TARGET_LIB) $(PGSQL_EXAMPLE_EXE) $(MYSQL_TARGET_LIB) $(MYSQL_EXAMPLE_EXE)
-	rm -f $(PGSQL_LIB_OBJS) $(PGSQL_EXAMPLE_OBJS) $(MYSQL_LIB_OBJS) $(MYSQL_EXAMPLE_OBJS)
+	rm -f $(PGSQL_TARGET_LIB) $(PGSQL_EXAMPLE_EXE) $(MYSQL_TARGET_LIB) $(MYSQL_EXAMPLE_EXE) $(MYSQL_SET_EXAMPLE_EXE)
+	rm -f $(PGSQL_LIB_OBJS) $(PGSQL_EXAMPLE_OBJS) $(MYSQL_LIB_OBJS) $(MYSQL_EXAMPLE_OBJS) $(MYSQL_SET_EXAMPLE_OBJS)
 	rm -f $(PGSQL_BISON_C) $(PGSQL_BISON_H) $(PGSQL_FLEX_C)
 	rm -f $(MYSQL_BISON_C) $(MYSQL_BISON_H) $(MYSQL_FLEX_C)
 	rm -f $(PGSQL_PARSER_SRC_DIR)/pgsql_parser.output $(PGSQL_PARSER_SRC_DIR)/pgsql_parser.report
