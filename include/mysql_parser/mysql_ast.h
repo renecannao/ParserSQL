@@ -4,27 +4,38 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <algorithm> 
+#include <algorithm>
 
-namespace MysqlParser { // Changed namespace
+namespace MysqlParser {
 
-// NodeType enum can be identical for this stage, or diverge later
 enum class NodeType {
     NODE_UNKNOWN,
     NODE_COMMAND,
     NODE_SELECT_STATEMENT,
     NODE_INSERT_STATEMENT,
+    NODE_DELETE_STATEMENT,
     NODE_IDENTIFIER,
     NODE_STRING_LITERAL,
     NODE_ASTERISK,
     NODE_SET_STATEMENT,
-    NODE_VARIABLE_ASSIGNMENT,   // for @var = expr or sysvar = expr
-    NODE_USER_VARIABLE,         // for @varname
-    NODE_SYSTEM_VARIABLE,       // for sysvar (can have scope)
-    NODE_VARIABLE_SCOPE,        // GLOBAL, SESSION, PERSIST, PERSIST_ONLY
-    NODE_EXPRESSION_PLACEHOLDER,// Placeholder for complex expressions
-    NODE_SET_NAMES,             // for SET NAMES
-    NODE_SET_CHARSET            // for SET CHARSET
+    NODE_VARIABLE_ASSIGNMENT,
+    NODE_USER_VARIABLE,
+    NODE_SYSTEM_VARIABLE,
+    NODE_VARIABLE_SCOPE,
+    NODE_EXPRESSION_PLACEHOLDER,
+    NODE_SET_NAMES,
+    NODE_SET_CHARSET,
+    NODE_DELETE_OPTIONS,
+    NODE_TABLE_NAME_LIST,
+    NODE_FROM_CLAUSE,
+    NODE_USING_CLAUSE,
+    NODE_WHERE_CLAUSE,
+    NODE_ORDER_BY_CLAUSE,
+    NODE_ORDER_BY_ITEM,
+    NODE_LIMIT_CLAUSE,
+    NODE_COMPARISON_EXPRESSION,
+    NODE_OPERATOR,
+    NODE_QUALIFIED_IDENTIFIER
 };
 
 struct AstNode {
@@ -63,6 +74,7 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_COMMAND: type_str = "COMMAND"; break;
         case NodeType::NODE_SELECT_STATEMENT: type_str = "SELECT_STMT"; break;
         case NodeType::NODE_INSERT_STATEMENT: type_str = "INSERT_STMT"; break;
+        case NodeType::NODE_DELETE_STATEMENT: type_str = "DELETE_STMT"; break;
         case NodeType::NODE_IDENTIFIER: type_str = "IDENTIFIER"; break;
         case NodeType::NODE_STRING_LITERAL: type_str = "STRING_LITERAL"; break;
         case NodeType::NODE_ASTERISK: type_str = "ASTERISK"; break;
@@ -74,6 +86,17 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_EXPRESSION_PLACEHOLDER: type_str = "EXPR_PLACEHOLDER"; break;
         case NodeType::NODE_SET_NAMES: type_str = "SET_NAMES"; break;
         case NodeType::NODE_SET_CHARSET: type_str = "SET_CHARSET"; break;
+        case NodeType::NODE_DELETE_OPTIONS: type_str = "DELETE_OPTIONS"; break;
+        case NodeType::NODE_TABLE_NAME_LIST: type_str = "TABLE_NAME_LIST"; break;
+        case NodeType::NODE_FROM_CLAUSE: type_str = "FROM_CLAUSE"; break;
+        case NodeType::NODE_USING_CLAUSE: type_str = "USING_CLAUSE"; break;
+        case NodeType::NODE_WHERE_CLAUSE: type_str = "WHERE_CLAUSE"; break;
+        case NodeType::NODE_ORDER_BY_CLAUSE: type_str = "ORDER_BY_CLAUSE"; break;
+        case NodeType::NODE_ORDER_BY_ITEM: type_str = "ORDER_BY_ITEM"; break;
+        case NodeType::NODE_LIMIT_CLAUSE: type_str = "LIMIT_CLAUSE"; break;
+        case NodeType::NODE_COMPARISON_EXPRESSION: type_str = "COMPARISON_EXPR"; break;
+        case NodeType::NODE_OPERATOR: type_str = "OPERATOR"; break; // <<< ADDED CASE
+        case NodeType::NODE_QUALIFIED_IDENTIFIER: type_str = "QUALIFIED_IDENTIFIER"; break;
         default: type_str = "UNHANDLED_TYPE(" + std::to_string(static_cast<int>(node->type)) + ")"; break;
     }
     std::cout << "Type: " << type_str << ", Value: '" << node->value << "'" << std::endl;
