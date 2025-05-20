@@ -62,6 +62,7 @@ union MYSQL_YYSTYPE;
   "NULL"                { return TOKEN_NULL_KEYWORD; }
   "NOT"                 { return TOKEN_NOT; }
 
+  "OFFSET"              { return TOKEN_OFFSET; }
 
   "DELETE"              { return TOKEN_DELETE; }
   "LOW_PRIORITY"        { return TOKEN_LOW_PRIORITY; }

@@ -64,7 +64,7 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 /* TOKEN_FULL is already declared */
 %token TOKEN_BEGIN TOKEN_COMMIT /* Added for BEGIN/COMMIT */
 %token TOKEN_IS TOKEN_NULL_KEYWORD TOKEN_NOT /* Added for IS NULL / IS NOT NULL */
-
+%token TOKEN_OFFSET /* Added for LIMIT ... OFFSET ... */
 
 %token <str_val> TOKEN_QUIT
 %token <str_val> TOKEN_IDENTIFIER
@@ -1119,12 +1119,22 @@ opt_limit_clause:
         $$->addChild($2); // count
     }
     | TOKEN_LIMIT number_literal_node TOKEN_COMMA number_literal_node { // LIMIT offset, count
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_LIMIT_CLAUSE);
+        // Standard SQL: LIMIT row_count OFFSET offset_row
+        // MySQL legacy: LIMIT offset_row, row_count
+        // Current AST: first child is offset, second is count for this form.
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_LIMIT_CLAUSE, "OFFSET_COUNT");
         $$->addChild($2); // offset
         $$->addChild($4); // count
     }
     // MySQL also supports LIMIT count OFFSET offset, but that's more complex to add here without ambiguity
     // For now, sticking to the common forms.
+    | TOKEN_LIMIT number_literal_node TOKEN_OFFSET number_literal_node { // LIMIT count OFFSET offset
+        // Standard SQL: LIMIT row_count OFFSET offset_row
+        // Current AST: first child is count, second is offset for this form.
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_LIMIT_CLAUSE, "COUNT_OFFSET");
+        $$->addChild($2); // count
+        $$->addChild($4); // offset
+    }
     ;
 
 opt_group_by_clause:
