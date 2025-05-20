@@ -63,6 +63,7 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 /* TOKEN_FIELDS is already declared */
 /* TOKEN_FULL is already declared */
 %token TOKEN_BEGIN TOKEN_COMMIT /* Added for BEGIN/COMMIT */
+%token TOKEN_IS TOKEN_NULL_KEYWORD TOKEN_NOT /* Added for IS NULL / IS NOT NULL */
 
 
 %token <str_val> TOKEN_QUIT
@@ -113,11 +114,11 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %type <node_val> values_clause value_row_list value_row expression_list
 
 // Precedence
-%left TOKEN_OR  // Assuming OR might be added
+%left TOKEN_OR
 %left TOKEN_AND
-%right TOKEN_NOT // Assuming NOT might be added
+%right TOKEN_NOT // For logical NOT
 
-%left TOKEN_EQUAL TOKEN_LESS TOKEN_GREATER TOKEN_LESS_EQUAL TOKEN_GREATER_EQUAL TOKEN_NOT_EQUAL
+%left TOKEN_EQUAL TOKEN_LESS TOKEN_GREATER TOKEN_LESS_EQUAL TOKEN_GREATER_EQUAL TOKEN_NOT_EQUAL TOKEN_IS // Added TOKEN_IS
 
 %left TOKEN_PLUS TOKEN_MINUS
 %left TOKEN_ASTERISK TOKEN_DIVIDE
@@ -1210,9 +1211,17 @@ expression_placeholder:
     }
     | expression_placeholder comparison_operator expression_placeholder {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_COMPARISON_EXPRESSION, $2->value);
-        delete $2; // $2 is operator node, its value copied
+        delete $2;
         $$->addChild($1);
         $$->addChild($3);
+    }
+    | expression_placeholder TOKEN_IS TOKEN_NULL_KEYWORD { // Covers `expr IS NULL`
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NULL_EXPRESSION);
+        $$->addChild($1); // The expression part
+    }
+    | expression_placeholder TOKEN_IS TOKEN_NOT TOKEN_NULL_KEYWORD { // Covers `expr IS NOT NULL`
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NOT_NULL_EXPRESSION);
+        $$->addChild($1); // The expression part
     }
     | match_against_expression { $$ = $1; }
     ;
@@ -1227,7 +1236,7 @@ simple_expression:
     | TOKEN_DEFAULT         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "DEFAULT"); }
     | aggregate_function_call { $$ = $1; }
     | function_call_placeholder {$$ = $1; }
-    | TOKEN_LPAREN expression_placeholder TOKEN_RPAREN { $$ = $2; }
+    | TOKEN_LPAREN expression_placeholder TOKEN_RPAREN { $$ = $2; } // Important for `(expr IS NOT NULL)`
     | simple_expression TOKEN_PLUS simple_expression {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "+");
         $$->addChild($1); $$->addChild($3);
@@ -1333,3 +1342,4 @@ opt_expression_placeholder_list:
 // }
 // The default yyerror or the one provided by %define parse.error verbose should be sufficient.
 // If you need custom error formatting or location tracking, you'd define mysql_yyerror here.
+

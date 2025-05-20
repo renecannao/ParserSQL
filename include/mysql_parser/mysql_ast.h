@@ -93,8 +93,11 @@ enum class NodeType {
     NODE_SHOW_OPTION_FULL,      // For SHOW FULL ...
     NODE_SHOW_OPTION_FIELDS,    // For SHOW ... FIELDS
     NODE_SHOW_TARGET_DATABASES, // For SHOW DATABASES
-    NODE_TABLE_SPECIFICATION    // For FROM table_name in SHOW FIELDS
+    NODE_TABLE_SPECIFICATION,   // For FROM table_name in SHOW FIELDS
 
+    // Added for IS NULL / IS NOT NULL
+    NODE_IS_NULL_EXPRESSION,
+    NODE_IS_NOT_NULL_EXPRESSION
 };
 
 // Structure for an AST Node
@@ -211,6 +214,8 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_SHOW_OPTION_FIELDS: type_str = "SHOW_OPT_FIELDS"; break;
         case NodeType::NODE_SHOW_TARGET_DATABASES: type_str = "SHOW_TARGET_DB"; break;
         case NodeType::NODE_TABLE_SPECIFICATION: type_str = "TABLE_SPEC"; break;
+        case NodeType::NODE_IS_NULL_EXPRESSION: type_str = "IS_NULL_EXPR"; break;
+        case NodeType::NODE_IS_NOT_NULL_EXPRESSION: type_str = "IS_NOT_NULL_EXPR"; break;
         default: type_str = "UNHANDLED_TYPE(" + std::to_string(static_cast<int>(node->type)) + ")"; break;
     }
     std::cout << "Type: " << type_str;

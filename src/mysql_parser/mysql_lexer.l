@@ -51,13 +51,17 @@ union MYSQL_YYSTYPE;
   "PERSIST_ONLY"        { return TOKEN_PERSIST_ONLY;}
   "DEFAULT"             { return TOKEN_DEFAULT; }
   "COLLATE"             { return TOKEN_COLLATE; }
-
+  
   "SHOW"                { return TOKEN_SHOW; }
-  "FULL"                { return TOKEN_FULL; } /* Already present for JOIN, ensure it's usable here */
-  "FIELDS"              { return TOKEN_FIELDS; } /* Already present for INTO OUTFILE, ensure it's usable here */
+  /* FULL is already defined for JOINs, will be reused */
+  /* FIELDS is already defined for INTO OUTFILE, will be reused */
   "DATABASES"           { return TOKEN_DATABASES; }
   "BEGIN"               { return TOKEN_BEGIN; }
   "COMMIT"              { return TOKEN_COMMIT; }
+  "IS"                  { return TOKEN_IS; }
+  "NULL"                { return TOKEN_NULL_KEYWORD; }
+  "NOT"                 { return TOKEN_NOT; }
+
 
   "DELETE"              { return TOKEN_DELETE; }
   "LOW_PRIORITY"        { return TOKEN_LOW_PRIORITY; }
@@ -239,5 +243,4 @@ union MYSQL_YYSTYPE;
 
 %%
 /* C code to be included at the end of the lexer */
-
 
