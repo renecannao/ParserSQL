@@ -52,6 +52,13 @@ union MYSQL_YYSTYPE;
   "DEFAULT"             { return TOKEN_DEFAULT; }
   "COLLATE"             { return TOKEN_COLLATE; }
 
+  "SHOW"                { return TOKEN_SHOW; }
+  "FULL"                { return TOKEN_FULL; } /* Already present for JOIN, ensure it's usable here */
+  "FIELDS"              { return TOKEN_FIELDS; } /* Already present for INTO OUTFILE, ensure it's usable here */
+  "DATABASES"           { return TOKEN_DATABASES; }
+  "BEGIN"               { return TOKEN_BEGIN; }
+  "COMMIT"              { return TOKEN_COMMIT; }
+
   "DELETE"              { return TOKEN_DELETE; }
   "LOW_PRIORITY"        { return TOKEN_LOW_PRIORITY; }
   "QUICK"               { return TOKEN_QUICK; }

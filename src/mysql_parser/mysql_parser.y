@@ -11,7 +11,6 @@
 
 union MYSQL_YYSTYPE;
 int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlParser::Parser* parser_context);
-
 %}
 
 %define api.prefix {mysql_yy}
@@ -60,6 +59,11 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %token TOKEN_MATCH TOKEN_AGAINST TOKEN_BOOLEAN TOKEN_MODE
 
 %token TOKEN_IN // For IN BOOLEAN MODE, and potentially IN operator later
+%token TOKEN_SHOW TOKEN_DATABASES /* Added for SHOW DATABASES */
+/* TOKEN_FIELDS is already declared */
+/* TOKEN_FULL is already declared */
+%token TOKEN_BEGIN TOKEN_COMMIT /* Added for BEGIN/COMMIT */
+
 
 %token <str_val> TOKEN_QUIT
 %token <str_val> TOKEN_IDENTIFIER
@@ -68,7 +72,7 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 
 // Types
 %type <node_val> statement simple_statement command_statement select_statement insert_statement delete_statement
-%type <node_val> identifier_node string_literal_node number_literal_node value_for_insert optional_semicolon
+%type <node_val> identifier_node string_literal_node number_literal_node value_for_insert optional_semicolon show_statement begin_statement commit_statement
 %type <node_val> set_statement set_option_list set_option set_transaction_statement transaction_characteristic_list transaction_characteristic isolation_level_spec
 %type <node_val> variable_to_set user_variable system_variable_unqualified system_variable_qualified
 %type <node_val> variable_scope
@@ -79,7 +83,7 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %type <node_val> opt_delete_options delete_option delete_option_item_list
 %type <node_val> opt_where_clause opt_having_clause
 %type <node_val> opt_order_by_clause opt_limit_clause
-%type <node_val> order_by_list order_by_item opt_asc_desc
+%type <node_val> order_by_list order_by_item opt_asc_desc table_specification
 %type <node_val> table_name_list_for_delete
 %type <node_val> comparison_operator
 %type <node_val> qualified_identifier_node table_name_spec // Added table_name_spec
@@ -97,6 +101,9 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %type <node_val> opt_into_outfile_options_list opt_into_outfile_options_list_tail into_outfile_options_list into_outfile_option
 %type <node_val> fields_options_clause lines_options_clause field_option_outfile_list field_option_outfile line_option_outfile_list line_option_outfile
 %type <node_val> opt_locking_clause_list locking_clause_list locking_clause lock_strength opt_lock_table_list opt_lock_option
+%type <node_val> show_what show_full_modifier show_from_or_in
+
+
 %type <node_val> subquery derived_table
 
 %type <node_val> single_input_statement // Type for the start symbol
@@ -158,7 +165,7 @@ query_list:
     | query_list statement { // This structure is for parsing multiple statements from one yyparse call.
                            // If parser.parse() is meant to handle one statement string at a time,
                            // this rule is not suitable as the main start symbol.
-                         }
+                           }
     ;
 */
 
@@ -168,6 +175,9 @@ statement:
     | insert_statement  { $$ = $1; if (parser_context) parser_context->internal_set_ast($1); }
     | set_statement     { $$ = $1; if (parser_context) parser_context->internal_set_ast($1); }
     | delete_statement  { $$ = $1; if (parser_context) parser_context->internal_set_ast($1); }
+    | show_statement    { $$ = $1; if (parser_context) parser_context->internal_set_ast($1); }
+    | begin_statement   { $$ = $1; if (parser_context) parser_context->internal_set_ast($1); }
+    | commit_statement  { $$ = $1; if (parser_context) parser_context->internal_set_ast($1); }
     ;
 
 simple_statement:
@@ -190,12 +200,14 @@ identifier_node:
     TOKEN_IDENTIFIER {
         std::string val = std::move(*$1);
         delete $1;
+        // Unquoting logic for backticked identifiers
         if (val.length() >= 2 && val.front() == '`' && val.back() == '`') {
             val = val.substr(1, val.length() - 2);
+            // Replace `` with `
             size_t pos = 0;
             while ((pos = val.find("``", pos)) != std::string::npos) {
                 val.replace(pos, 2, "`");
-                pos += 1;
+                pos += 1; // Move past the replaced `
             }
         }
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IDENTIFIER, std::move(val));
@@ -207,12 +219,11 @@ qualified_identifier_node: // For table.column or schema.table
         std::string qualified_name = $1->value + "." + $3->value;
         // Create a generic node; specific handling might be needed based on context
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_QUALIFIED_IDENTIFIER, std::move(qualified_name));
-        $$->addChild($1);
-        $$->addChild($3);
+        $$->addChild($1); // table/schema
+        $$->addChild($3); // column/table
     }
     // Potentially add schema.table.column or db.schema.table if needed, though usually context implies this
     ;
-
 
 string_literal_node:
     TOKEN_STRING_LITERAL {
@@ -221,11 +232,16 @@ string_literal_node:
         std::string val_content;
         char quote_char = 0;
         if (!raw_val.empty()) quote_char = raw_val.front();
+
         if (raw_val.length() >= 2 && (raw_val.front() == '\'' || raw_val.front() == '"') && raw_val.front() == raw_val.back()) {
             val_content = raw_val.substr(1, raw_val.length() - 2);
         } else {
-            val_content = raw_val; // Should not happen if lexer enforces quotes
+            // This case might occur if the lexer returns unquoted strings for some reason,
+            // or for types like hex literals X'...' that might not be strictly string literals
+            // but are passed as TOKEN_STRING_LITERAL.
+            val_content = raw_val;
         }
+
         std::string unescaped_val;
         unescaped_val.reserve(val_content.length());
         bool escaping = false;
@@ -236,25 +252,39 @@ string_literal_node:
                     case 't': unescaped_val += '\t'; break;
                     case 'r': unescaped_val += '\r'; break;
                     case 'b': unescaped_val += '\b'; break;
-                    case '0': unescaped_val += '\0'; break;
-                    case 'Z': unescaped_val += '\x1A'; break; // Ctrl+Z
+                    case '0': unescaped_val += '\0'; break; // Null character
+                    case 'Z': unescaped_val += '\x1A'; break; // Ctrl+Z for SUB
                     case '\\': unescaped_val += '\\'; break;
                     case '\'': unescaped_val += '\''; break;
                     case '"': unescaped_val += '"'; break;
-                    default: unescaped_val += val_content[i]; break; // Other escaped chars
+                    // MySQL also allows escaping % and _ for LIKE contexts, but that's usually handled by the expression evaluation, not lexing/parsing of the literal itself.
+                    default:
+                        // If the character after \ is not a special escape char, MySQL treats \ as a literal \
+                        // However, standard SQL behavior is often to just take the character literally.
+                        // For simplicity here, let's assume it might be an escaped char that we just pass through,
+                        // or a literal backslash followed by a character.
+                        // A more robust parser might differentiate or follow strict SQL standard for unknown escapes.
+                        // For now, we'll treat it as literal character following backslash if not recognized.
+                        unescaped_val += val_content[i]; // Or just `unescaped_val += '\\'; unescaped_val += val_content[i];` if \ is always literal
+                        break;
                 }
                 escaping = false;
             } else if (val_content[i] == '\\') {
+                // Check if it's a MySQL specific escape sequence that the lexer didn't handle
+                // (e.g., if lexer is very basic and passes \ through).
+                // Standard SQL string literals use '' for ' and "" for ".
+                // MySQL also uses \', \", \\.
                 escaping = true;
-            } else if (quote_char != 0 && val_content[i] == quote_char && (i + 1 < val_content.length() && val_content[i+1] == quote_char) ) { // Handle '' or "" for literal quote
+            } else if (quote_char != 0 && val_content[i] == quote_char && (i + 1 < val_content.length() && val_content[i+1] == quote_char) ) { // Handle '' or "" for literal quote (SQL Standard)
                 unescaped_val += quote_char;
-                i++;
+                i++; // Skip the second quote
             }
             else {
                 unescaped_val += val_content[i];
             }
         }
-        if(escaping) unescaped_val+='\\'; // Trailing escape char
+        if(escaping) unescaped_val+='\\'; // if string ends with a single backslash
+
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_STRING_LITERAL, std::move(unescaped_val));
     }
     ;
@@ -644,7 +674,6 @@ joined_table:
             natural_join_type_str += " " + $2->children[1]->value; // "NATURAL LEFT"
         }
         join_node->value = natural_join_type_str + " JOIN";
-
         join_node->addChild($1); // Left table
         // join_node->addChild($2); // The natural spec node itself - or just use its info for value
         join_node->addChild($4); // Right table
@@ -926,7 +955,7 @@ set_statement:
         MysqlParser::AstNode* set_vars_stmt = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SET_STATEMENT, "SET_VARIABLES");
         set_vars_stmt->addChild($2);
         $$ = set_vars_stmt;
-     }
+    }
     | TOKEN_SET set_transaction_statement optional_semicolon { $$ = $2; }
     ;
 
@@ -1118,6 +1147,59 @@ grouping_element:
     // Add WITH ROLLUP if needed
     ;
 
+/* --- SHOW Statement Rules --- */
+show_statement:
+    TOKEN_SHOW show_full_modifier show_what optional_semicolon {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SHOW_STATEMENT);
+        if ($2) $$->addChild($2); // show_full_modifier (can be null)
+        $$->addChild($3);       // show_what
+    }
+    ;
+
+show_full_modifier:
+    /* empty */     { $$ = nullptr; }
+    | TOKEN_FULL    { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SHOW_OPTION_FULL, "FULL"); }
+    ;
+
+show_what:
+    TOKEN_DATABASES {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SHOW_TARGET_DATABASES, "DATABASES");
+    }
+    | TOKEN_FIELDS show_from_or_in table_specification {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SHOW_OPTION_FIELDS, "FIELDS");
+        // $2 is show_from_or_in which is just a keyword placeholder for now, so not adding as child.
+        $$->addChild($3); // table_specification
+    }
+    // Add other SHOW variants as needed, e.g., SHOW TABLES, SHOW STATUS, etc.
+    // Example: SHOW TABLES [FROM db_name] [LIKE 'pattern' | WHERE expr]
+    // SHOW CREATE TABLE table_name
+    ;
+
+show_from_or_in:
+    TOKEN_FROM { $$ = nullptr; /* keyword only, not stored as node */ }
+    | TOKEN_IN   { $$ = nullptr; /* keyword only, not stored as node */ }
+    ;
+
+table_specification: // Used by SHOW FIELDS FROM table_name
+    table_name_spec { // Re-use table_name_spec which handles identifier_node and qualified_identifier_node
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TABLE_SPECIFICATION);
+        $$->addChild($1); // table_name_spec node which contains table_name or schema.table_name
+    }
+    ;
+
+
+/* --- BEGIN/COMMIT Statement Rules --- */
+begin_statement:
+    TOKEN_BEGIN optional_semicolon {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_BEGIN_STATEMENT, "BEGIN");
+    }
+    ;
+commit_statement:
+    TOKEN_COMMIT optional_semicolon {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_COMMIT_STATEMENT, "COMMIT");
+    }
+    ;
+
 /* --- Expression related rules --- */
 expression_placeholder:
     simple_expression { $$ = $1; }
@@ -1229,7 +1311,7 @@ function_call_placeholder:
         } else {
             // Add an empty list node for functions with no arguments, e.g., NOW()
             // This ensures the function call node always has a child for arguments, even if empty.
-             $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "empty_arg_list_wrapper"));
+            $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "empty_arg_list_wrapper"));
         }
     }
     ;
@@ -1251,4 +1333,3 @@ opt_expression_placeholder_list:
 // }
 // The default yyerror or the one provided by %define parse.error verbose should be sufficient.
 // If you need custom error formatting or location tracking, you'd define mysql_yyerror here.
-

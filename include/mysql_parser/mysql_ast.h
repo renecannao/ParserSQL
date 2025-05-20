@@ -84,7 +84,17 @@ enum class NodeType {
     NODE_LINES_TERMINATED_BY,
     NODE_CHARSET_OPTION,        // For CHARACTER SET 'name' in OUTFILE
 
-    NODE_KEYWORD                // For storing keywords like ALL, DISTINCT (as value) in some contexts
+    NODE_KEYWORD,               // For storing keywords like ALL, DISTINCT (as value) in some contexts
+
+    // Added for SHOW, BEGIN, COMMIT
+    NODE_SHOW_STATEMENT,
+    NODE_BEGIN_STATEMENT,
+    NODE_COMMIT_STATEMENT,
+    NODE_SHOW_OPTION_FULL,      // For SHOW FULL ...
+    NODE_SHOW_OPTION_FIELDS,    // For SHOW ... FIELDS
+    NODE_SHOW_TARGET_DATABASES, // For SHOW DATABASES
+    NODE_TABLE_SPECIFICATION    // For FROM table_name in SHOW FIELDS
+
 };
 
 // Structure for an AST Node
@@ -194,6 +204,13 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_LINES_TERMINATED_BY: type_str = "LINES_TERMINATED_BY"; break;
         case NodeType::NODE_CHARSET_OPTION: type_str = "CHARSET_OPTION"; break;
         case NodeType::NODE_KEYWORD: type_str = "KEYWORD"; break;
+        case NodeType::NODE_SHOW_STATEMENT: type_str = "SHOW_STMT"; break;
+        case NodeType::NODE_BEGIN_STATEMENT: type_str = "BEGIN_STMT"; break;
+        case NodeType::NODE_COMMIT_STATEMENT: type_str = "COMMIT_STMT"; break;
+        case NodeType::NODE_SHOW_OPTION_FULL: type_str = "SHOW_OPT_FULL"; break;
+        case NodeType::NODE_SHOW_OPTION_FIELDS: type_str = "SHOW_OPT_FIELDS"; break;
+        case NodeType::NODE_SHOW_TARGET_DATABASES: type_str = "SHOW_TARGET_DB"; break;
+        case NodeType::NODE_TABLE_SPECIFICATION: type_str = "TABLE_SPEC"; break;
         default: type_str = "UNHANDLED_TYPE(" + std::to_string(static_cast<int>(node->type)) + ")"; break;
     }
     std::cout << "Type: " << type_str;
