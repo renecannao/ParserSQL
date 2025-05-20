@@ -91,6 +91,8 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %type <node_val> opt_locking_clause_list locking_clause_list locking_clause lock_strength opt_lock_table_list opt_lock_option
 %type <node_val> subquery derived_table
 
+%type <node_val> single_input_statement
+
 // Precedence
 %left TOKEN_OR  // Assuming OR might be added
 %left TOKEN_AND
@@ -110,13 +112,35 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %right TOKEN_FOR
 %left TOKEN_COMMA
 
-%start query_list
+%start single_input_statement
 
 %%
 
-query_list:
-    /* empty */ { if (parser_context) parser_context->internal_set_ast(nullptr); }
-    | query_list statement { /* Managed by parser_context */ }
+// New start rule definition:
+// This rule expects to parse one statement, or handle empty input.
+// Bison will implicitly expect this rule to consume the entire input stream
+// up to the EOF marker returned by the lexer (usually 0).
+// New start rule definition:
+single_input_statement:
+    /* empty input */ {
+        if (parser_context) {
+            // If Parser::parse() initializes its ast_root_ to nullptr before calling yyparse,
+            // and internal_set_ast(nullptr) is safe (e.g., deletes old, sets to null),
+            // this call ensures the parser's state is clean for empty input.
+            parser_context->internal_set_ast(nullptr);
+        }
+        $$ = nullptr; // The result of parsing an empty input is a null AST.
+    }
+    | statement {
+        // The 'statement' rule's alternatives (e.g., select_statement, insert_statement)
+        // are responsible for calling parser_context->internal_set_ast($1)
+        // with the AST node they produce.
+        // This 'single_input_statement' rule simply propagates the AST node ($1)
+        // received from the 'statement' rule.
+        // The parser_context->ast_root_ should already hold the correct AST node ($1)
+        // due to the call within the 'statement' rule's actions.
+        $$ = $1;
+    }
     ;
 
 optional_semicolon:
