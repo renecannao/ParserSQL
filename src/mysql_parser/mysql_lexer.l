@@ -55,7 +55,7 @@ union MYSQL_YYSTYPE;
   "DELETE"              { return TOKEN_DELETE; }
   "LOW_PRIORITY"        { return TOKEN_LOW_PRIORITY; }
   "QUICK"               { return TOKEN_QUICK; }
-  "IGNORE"              { return TOKEN_IGNORE_SYM; }
+  "IGNORE"              { return TOKEN_IGNORE_SYM; } /* Changed from TOKEN_IGNORE to avoid conflict if IGNORE is a general keyword */
   "USING"               { return TOKEN_USING; }
   "ORDER"               { return TOKEN_ORDER; }
   "BY"                  { return TOKEN_BY; }
@@ -68,7 +68,7 @@ union MYSQL_YYSTYPE;
   "GROUP"               { return TOKEN_GROUP; }
   "ALL"                 { return TOKEN_ALL; }
   "HAVING"              { return TOKEN_HAVING; }
-  "AND"                 { return TOKEN_AND; } // Moved here
+  "AND"                 { return TOKEN_AND; }
 
   /* JOIN related keywords */
   "JOIN"                { return TOKEN_JOIN; }
@@ -92,6 +92,24 @@ union MYSQL_YYSTYPE;
   "SKIP"                { return TOKEN_SKIP; }
   "LOCKED"              { return TOKEN_LOCKED; }
 
+  /* Keywords for SET TRANSACTION (Query 1) */
+  "TRANSACTION"         { return TOKEN_TRANSACTION; }
+  "ISOLATION"           { return TOKEN_ISOLATION; }
+  "LEVEL"               { return TOKEN_LEVEL; }
+  "READ"                { return TOKEN_READ; }
+  "WRITE"               { return TOKEN_WRITE; }
+  "COMMITTED"           { return TOKEN_COMMITTED; }
+  "UNCOMMITTED"         { return TOKEN_UNCOMMITTED; }
+  "REPEATABLE"          { return TOKEN_REPEATABLE; }
+  "SERIALIZABLE"        { return TOKEN_SERIALIZABLE; }
+
+  /* Keywords for MATCH AGAINST (Query 5) */
+  "MATCH"               { return TOKEN_MATCH; }
+  "AGAINST"             { return TOKEN_AGAINST; }
+  "BOOLEAN"             { return TOKEN_BOOLEAN; }
+  "MODE"                { return TOKEN_MODE; }
+  "IN"                  { return TOKEN_IN; } /* For IN BOOLEAN MODE and IN operator */
+
   /* Keywords for INTO OUTFILE options */
   "FIELDS"              { return TOKEN_FIELDS; }
   "TERMINATED"          { return TOKEN_TERMINATED; }
@@ -114,10 +132,10 @@ union MYSQL_YYSTYPE;
 
   "@@global."           { return TOKEN_GLOBAL_VAR_PREFIX; }
   "@@session."          { return TOKEN_SESSION_VAR_PREFIX; }
-  "@@local."            { return TOKEN_SESSION_VAR_PREFIX; }
-  "@@persisted."        { return TOKEN_PERSIST_VAR_PREFIX; }
-  "@@"                  { return TOKEN_DOUBLESPECIAL; }
-  "@"                   { return TOKEN_SPECIAL; }
+  "@@local."            { return TOKEN_SESSION_VAR_PREFIX; } /* local is alias for session */
+  "@@persisted."        { return TOKEN_PERSIST_VAR_PREFIX; } /* MySQL 8 specific */
+  "@@"                  { return TOKEN_DOUBLESPECIAL; } /* For @@varname */
+  "@"                   { return TOKEN_SPECIAL; } /* For @uservar */
 
   /* Generic Identifier - MUST BE AFTER specific keywords */
   [a-zA-Z_][a-zA-Z0-9_]* {
@@ -149,8 +167,8 @@ union MYSQL_YYSTYPE;
 
 
   [0-9]+("."[0-9]+)?([eE][+-]?[0-9]+)? { SAVE_TOKEN_STRING; return TOKEN_NUMBER_LITERAL; }
-  0x[0-9a-fA-F]+        { SAVE_TOKEN_STRING; return TOKEN_NUMBER_LITERAL; }
-  X'[0-9a-fA-F]*'       { SAVE_TOKEN_STRING; return TOKEN_STRING_LITERAL; }
+  0x[0-9a-fA-F]+        { SAVE_TOKEN_STRING; return TOKEN_NUMBER_LITERAL; } /* Hex literal */
+  X'[0-9a-fA-F]*'       { SAVE_TOKEN_STRING; return TOKEN_STRING_LITERAL; } /* Hex string literal X'...' */
 
 
   .                     {
@@ -176,7 +194,14 @@ union MYSQL_YYSTYPE;
   "[^'\\\\]+"           { *(yylval_param->str_val) += yytext; }
   "\\'"                 { *(yylval_param->str_val) += "'"; }
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
-  "''"                  { *(yylval_param->str_val) += "'"; }
+  /* Add other standard SQL escape sequences if needed e.g. \n, \t, \b, \r, \0, \Z */
+  "\\n"                 { *(yylval_param->str_val) += "\n"; }
+  "\\t"                 { *(yylval_param->str_val) += "\t"; }
+  "\\r"                 { *(yylval_param->str_val) += "\r"; }
+  "\\b"                 { *(yylval_param->str_val) += "\b"; }
+  "\\0"                 { *(yylval_param->str_val) += "\0"; }
+  "\\Z"                 { *(yylval_param->str_val) += "\x1a"; } /* Ctrl+Z */
+  "''"                  { *(yylval_param->str_val) += "'"; } /* SQL standard for literal single quote */
   "'"                   { *(yylval_param->str_val) += "'"; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated single-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
@@ -185,19 +210,27 @@ union MYSQL_YYSTYPE;
   "[^\"\\\\]+"          { *(yylval_param->str_val) += yytext; }
   "\\\""                { *(yylval_param->str_val) += "\""; }
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
-  "\"\""                { *(yylval_param->str_val) += "\""; }
+  /* Add other standard SQL escape sequences if needed */
+  "\\n"                 { *(yylval_param->str_val) += "\n"; }
+  "\\t"                 { *(yylval_param->str_val) += "\t"; }
+  "\\r"                 { *(yylval_param->str_val) += "\r"; }
+  "\\b"                 { *(yylval_param->str_val) += "\b"; }
+  "\\0"                 { *(yylval_param->str_val) += "\0"; }
+  "\\Z"                 { *(yylval_param->str_val) += "\x1a"; }
+  "\"\""                { *(yylval_param->str_val) += "\""; } /* SQL standard for literal double quote */
   "\""                  { *(yylval_param->str_val) += "\""; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated double-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <BTIDENT>{
   "`"                   { BEGIN(INITIAL); return TOKEN_IDENTIFIER; }
-  "``"                  { *(yylval_param->str_val) += '`'; }
+  "``"                  { *(yylval_param->str_val) += '`'; } /* Escaped backtick inside identifier */
   [^`\n]+               { *(yylval_param->str_val) += yytext; }
-  \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); }
+  \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); /* Error, but return to INITIAL */ }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated backticked identifier"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 %%
 /* C code to be included at the end of the lexer */
+
 
