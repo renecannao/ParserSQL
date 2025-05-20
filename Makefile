@@ -2,7 +2,7 @@
 CXX = g++
 LINKER = g++ 
 
-CXXFLAGS = -std=c++17 -Wall -g 
+CXXFLAGS = -std=c++17 -Wall -g -O2
 CPPFLAGS = -I$(PROJECT_ROOT)/include
 
 PROJECT_ROOT = .

@@ -3,26 +3,19 @@
 %option extra-type="MysqlParser::Parser*"
 
 %{
+#define ECHO /* This makes ECHO do nothing */
+// C++ code to be included in the generated lexer
 #include "mysql_parser/mysql_parser.h"   // For MysqlParser::Parser, yyscan_t
 #include "mysql_parser/mysql_ast.h"      // For MysqlParser::AstNode, etc.
-#include "mysql_parser.tab.h"           // Bison-generated: token enums, defines union MYSQL_YYSTYPE and YYSTYPE
+#include "mysql_parser.tab.h"           // Bison-generated: token enums, defines union MYSQL_YYSTYPE
 #include <string>
 #include <vector>
 
-// YY_DECL to control the signature of the generated mysql_yylex function.
-// This signature MUST match how Bison calls it (influenced by %lex-param in .y file
-// and the extern declaration of mysql_yylex in the .y file's prologue).
-// We use the explicit union name as deduced from previous Bison error messages.
-// The actual definition of 'union MYSQL_YYSTYPE' comes from "mysql_parser.tab.h".
-union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql_parser.tab.h)
+union MYSQL_YYSTYPE;
 #undef YY_DECL
 #define YY_DECL int mysql_yylex (union MYSQL_YYSTYPE *yylval_param, yyscan_t yyscanner, MysqlParser::Parser* parser_context)
 
-// YY_USER_DATA can be used to access parser_context IF it's passed as yyextra,
-// OR if parser_context from YY_DECL is directly used.
-// Since parser_context is now a direct parameter to mysql_yylex via YY_DECL,
-// we can use it directly in actions.
-// #define YY_USER_DATA ((MysqlParser::Parser*)yyget_extra(yyscanner))
+#define SAVE_TOKEN_STRING yylval_param->str_val = new std::string(yytext)
 %}
 
 %x COMMENT
@@ -31,21 +24,23 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
 %x BTIDENT
 
 %%
+ /* Rules for the lexer */
 
 <INITIAL>{
   "/*"                  { BEGIN(COMMENT); }
-  "-- ".* { /* MySQL -- comment (note space); no action, just ignore */ }
-  "--\n"                { /* MySQL -- comment followed by newline; no action */ }
-  "#".* { /* MySQL # comment; no action */ }
+  "-- ".* { /* MySQL -- comment (note space); ignore */ }
+  "--\n"                { /* MySQL -- comment followed by newline; ignore */ }
+  "#".* { /* MySQL # comment; ignore */ }
 
-  [ \t\n]+              { /* Ignore whitespace */ }
+  [ \t\n\r]+            { /* Ignore whitespace and carriage returns */ }
 
+  /* Keywords - Specific keywords must come BEFORE the generic identifier rule */
   "SELECT"              { return TOKEN_SELECT; }
   "FROM"                { return TOKEN_FROM; }
   "INSERT"              { return TOKEN_INSERT; }
   "INTO"                { return TOKEN_INTO; }
   "VALUES"              { return TOKEN_VALUES; }
-  "QUIT"                { yylval_param->str_val = new std::string(yytext); return TOKEN_QUIT; }
+  "QUIT"                { SAVE_TOKEN_STRING; return TOKEN_QUIT; }
 
   "SET"                 { return TOKEN_SET; }
   "NAMES"               { return TOKEN_NAMES; }
@@ -69,26 +64,75 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
   "DESC"                { return TOKEN_DESC; }
   "WHERE"               { return TOKEN_WHERE; }
   "AS"                  { return TOKEN_AS; }
+  "DISTINCT"            { return TOKEN_DISTINCT; }
+  "GROUP"               { return TOKEN_GROUP; }
+  "ALL"                 { return TOKEN_ALL; }
+  "HAVING"              { return TOKEN_HAVING; }
+  "AND"                 { return TOKEN_AND; } // Moved here
+
+  /* JOIN related keywords */
+  "JOIN"                { return TOKEN_JOIN; }
+  "INNER"               { return TOKEN_INNER; }
+  "LEFT"                { return TOKEN_LEFT; }
+  "RIGHT"               { return TOKEN_RIGHT; }
+  "FULL"                { return TOKEN_FULL; }
+  "OUTER"               { return TOKEN_OUTER; }
+  "CROSS"               { return TOKEN_CROSS; }
+  "NATURAL"             { return TOKEN_NATURAL; }
+  "ON"                  { return TOKEN_ON; }
+
+  /* New keywords for INTO, LOCKING */
+  "OUTFILE"             { return TOKEN_OUTFILE; }
+  "DUMPFILE"            { return TOKEN_DUMPFILE; }
+  "FOR"                 { return TOKEN_FOR; }
+  "UPDATE"              { return TOKEN_UPDATE; }
+  "SHARE"               { return TOKEN_SHARE; }
+  "OF"                  { return TOKEN_OF; }
+  "NOWAIT"              { return TOKEN_NOWAIT; }
+  "SKIP"                { return TOKEN_SKIP; }
+  "LOCKED"              { return TOKEN_LOCKED; }
+
+  /* Keywords for INTO OUTFILE options */
+  "FIELDS"              { return TOKEN_FIELDS; }
+  "TERMINATED"          { return TOKEN_TERMINATED; }
+  "OPTIONALLY"          { return TOKEN_OPTIONALLY; }
+  "ENCLOSED"            { return TOKEN_ENCLOSED; }
+  "ESCAPED"             { return TOKEN_ESCAPED; }
+  "LINES"               { return TOKEN_LINES; }
+  "STARTING"            { return TOKEN_STARTING; }
+
+  /* Aggregate function keywords */
+  "COUNT"               { return TOKEN_COUNT; }
+  "SUM"                 { return TOKEN_SUM; }
+  "AVG"                 { return TOKEN_AVG; }
+  "MAX"                 { return TOKEN_MAX; }
+  "MIN"                 { return TOKEN_MIN; }
 
 
+  /* Identifiers and Literals */
   "`"                   { yylval_param->str_val = new std::string(); BEGIN(BTIDENT); }
 
   "@@global."           { return TOKEN_GLOBAL_VAR_PREFIX; }
   "@@session."          { return TOKEN_SESSION_VAR_PREFIX; }
-  "@@local."            { return TOKEN_SESSION_VAR_PREFIX; } /* Alias for session */
-  "@@persisted."        { return TOKEN_PERSIST_VAR_PREFIX; } /* If you add specific handling */
+  "@@local."            { return TOKEN_SESSION_VAR_PREFIX; }
+  "@@persisted."        { return TOKEN_PERSIST_VAR_PREFIX; }
   "@@"                  { return TOKEN_DOUBLESPECIAL; }
   "@"                   { return TOKEN_SPECIAL; }
 
+  /* Generic Identifier - MUST BE AFTER specific keywords */
   [a-zA-Z_][a-zA-Z0-9_]* {
-                          yylval_param->str_val = new std::string(yytext);
+                          SAVE_TOKEN_STRING;
                           return TOKEN_IDENTIFIER;
                         }
 
   "'"                   { yylval_param->str_val = new std::string("'"); BEGIN(SQSTRING); }
   "\""                  { yylval_param->str_val = new std::string("\""); BEGIN(DQSTRING); }
 
-  "*"                   { return TOKEN_ASTERISK; }
+  /* Operators and Punctuation */
+  "*"                   { return TOKEN_ASTERISK; } /* For SELECT * and also multiplication */
+  "+"                   { return TOKEN_PLUS; }
+  "-"                   { return TOKEN_MINUS; }
+  "/"                   { return TOKEN_DIVIDE; }
   "("                   { return TOKEN_LPAREN; }
   ")"                   { return TOKEN_RPAREN; }
   ";"                   { return TOKEN_SEMICOLON; }
@@ -104,7 +148,10 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
   "<>"                  { return TOKEN_NOT_EQUAL; }
 
 
-  [0-9]+("."[0-9]+)?    { yylval_param->str_val = new std::string(yytext); return TOKEN_NUMBER_LITERAL;}
+  [0-9]+("."[0-9]+)?([eE][+-]?[0-9]+)? { SAVE_TOKEN_STRING; return TOKEN_NUMBER_LITERAL; }
+  0x[0-9a-fA-F]+        { SAVE_TOKEN_STRING; return TOKEN_NUMBER_LITERAL; }
+  X'[0-9a-fA-F]*'       { SAVE_TOKEN_STRING; return TOKEN_STRING_LITERAL; }
+
 
   .                     {
                           char err_msg[100];
@@ -112,7 +159,7 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
                           if (parser_context) {
                               parser_context->internal_add_error(err_msg);
                           } else {
-                              fprintf(stderr, "%s\n", err_msg); // Fallback
+                              fprintf(stderr, "%s\n", err_msg);
                           }
                         }
 }
@@ -122,36 +169,35 @@ union MYSQL_YYSTYPE; // Forward declare for YY_DECL (Bison defines this in mysql
   [^*\n]+               { /* Eat comment content */ }
   "*"                   { /* Eat isolated asterisks */ }
   \n                    { /* Newlines in comments */ }
+  <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated /* comment"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <SQSTRING>{
   "[^'\\\\]+"           { *(yylval_param->str_val) += yytext; }
   "\\'"                 { *(yylval_param->str_val) += "'"; }
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
-  "''"                  { *(yylval_param->str_val) += "'"; } /* MySQL: '' inside string is a literal ' */
+  "''"                  { *(yylval_param->str_val) += "'"; }
   "'"                   { *(yylval_param->str_val) += "'"; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
-  <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated single-quoted string"); BEGIN(INITIAL); return YY_NULL; /* Return 0 for EOF/error */ }
+  <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated single-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <DQSTRING>{
   "[^\"\\\\]+"          { *(yylval_param->str_val) += yytext; }
   "\\\""                { *(yylval_param->str_val) += "\""; }
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
-  "\"\""                { *(yylval_param->str_val) += "\""; } /* MySQL: "" inside string is a literal " */
+  "\"\""                { *(yylval_param->str_val) += "\""; }
   "\""                  { *(yylval_param->str_val) += "\""; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated double-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <BTIDENT>{
-  "`"                   { BEGIN(INITIAL); return TOKEN_IDENTIFIER; } /* Returns the accumulated string */
-  "``"                  { *(yylval_param->str_val) += '`'; } /* `` inside backticks is a literal ` */
+  "`"                   { BEGIN(INITIAL); return TOKEN_IDENTIFIER; }
+  "``"                  { *(yylval_param->str_val) += '`'; }
   [^`\n]+               { *(yylval_param->str_val) += yytext; }
-  \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); /* No explicit return, lexer will find next token or error */ }
+  \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated backticked identifier"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 %%
-
-// yywrap is not strictly needed due to %option noyywrap
-// int mysql_yywrap(yyscan_t scanner) { return 1; }
+/* C code to be included at the end of the lexer */
 
