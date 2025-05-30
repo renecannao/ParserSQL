@@ -18,14 +18,21 @@ enum class NodeType {
     NODE_IDENTIFIER,
     NODE_STRING_LITERAL,
     NODE_NUMBER_LITERAL,        // For numeric values
+    NODE_BOOLEAN_LITERAL,       // For boolean values
+    NODE_NULL_LITERAL,          // For NULL literal
+    NODE_VALUE_LITERAL,         // For values with no type; options like 'ON'
+    NODE_TIMESTAMP,             // For dates
+    NODE_INTERVAL,              // For dates
     NODE_ASTERISK,              // For '*' in SELECT
     NODE_SET_STATEMENT,
+    NODE_SET_OPTION_VALUE_LIST,
     NODE_VARIABLE_ASSIGNMENT,
     NODE_USER_VARIABLE,         // e.g., @my_var
     NODE_SYSTEM_VARIABLE,       // e.g., @@global.var
     NODE_VARIABLE_SCOPE,        // GLOBAL, SESSION, PERSIST, etc.
-    NODE_EXPRESSION_PLACEHOLDER,// Placeholder for more complex expressions (and functions)
+    NODE_EXPR,// Placeholder for more complex expressions (and functions)
     NODE_SIMPLE_EXPRESSION,     // More specific expression type
+    NODE_INTERVAL_EXPRESSION,     // More specific expression type
     NODE_AGGREGATE_FUNCTION_CALL, // For COUNT, SUM, AVG etc.
     NODE_SET_NAMES,
     NODE_SET_CHARSET,
@@ -38,15 +45,19 @@ enum class NodeType {
     NODE_ORDER_BY_CLAUSE,
     NODE_ORDER_BY_ITEM,
     NODE_LIMIT_CLAUSE,
+    NODE_ESCAPE_CLAUSE,
     NODE_COMPARISON_EXPRESSION, // e.g., col = 5
     NODE_LOGICAL_AND_EXPRESSION, // For AND operator
-    NODE_OPERATOR,              // e.g., =, <, +, -, JOIN type strings
-    NODE_QUALIFIED_IDENTIFIER,  // e.g., table.column
+    NODE_OPERATOR,               // e.g., =, <, +, -, JOIN type strings
+    NODE_LEFT_SHIFT_OPERATOR,    // e.g., <<
+    NODE_RIGHT_SHIFT_OPERATOR,   // e.g., >>
+    NODE_QUALIFIED_IDENTIFIER,   // e.g., table.column
 
     // For SELECT specific parts
     NODE_SELECT_OPTIONS,        // DISTINCT, SQL_CALC_FOUND_ROWS etc.
     NODE_SELECT_ITEM_LIST,      // List of expressions/columns in SELECT
     NODE_SELECT_ITEM,           // A single item in the SELECT list
+    NODE_SELECT_RAW_SUBQUERY,   // Subquery parsing placeholder
     NODE_ALIAS,                 // For 'AS alias_name'
     NODE_TABLE_REFERENCE,       // Reference to a table (name, derived, join result)
     NODE_GROUP_BY_CLAUSE,
@@ -100,6 +111,10 @@ enum class NodeType {
     NODE_IS_NOT_NULL_EXPRESSION
 };
 
+struct AstNode;
+
+inline void print_ast(const AstNode* node, int indent = 0);
+
 // Structure for an AST Node
 struct AstNode {
     NodeType type;
@@ -134,7 +149,7 @@ struct AstNode {
 };
 
 // Helper function to print the AST (for debugging)
-inline void print_ast(const AstNode* node, int indent = 0) {
+inline void print_ast(const AstNode* node, int indent) {
     if (!node) return;
 
     for (int i = 0; i < indent; ++i) std::cout << "  ";
@@ -149,14 +164,21 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_IDENTIFIER: type_str = "IDENTIFIER"; break;
         case NodeType::NODE_STRING_LITERAL: type_str = "STRING_LITERAL"; break;
         case NodeType::NODE_NUMBER_LITERAL: type_str = "NUMBER_LITERAL"; break;
+        case NodeType::NODE_BOOLEAN_LITERAL: type_str = "BOOLEAN_LITERAL"; break;
+        case NodeType::NODE_NULL_LITERAL: type_str = "NULL_LITERAL"; break;
+        case NodeType::NODE_VALUE_LITERAL: type_str = "VALUE_LITERAL"; break;
+        case NodeType::NODE_TIMESTAMP: type_str = "TIMESTAMP"; break;
+        case NodeType::NODE_INTERVAL: type_str = "INTERVAL"; break;
         case NodeType::NODE_ASTERISK: type_str = "ASTERISK"; break;
         case NodeType::NODE_SET_STATEMENT: type_str = "SET_STATEMENT"; break;
         case NodeType::NODE_VARIABLE_ASSIGNMENT: type_str = "VAR_ASSIGN"; break;
+        case NodeType::NODE_SET_OPTION_VALUE_LIST: type_str = "SET_OPTION_VALUE_LIST"; break;
         case NodeType::NODE_USER_VARIABLE: type_str = "USER_VAR"; break;
         case NodeType::NODE_SYSTEM_VARIABLE: type_str = "SYSTEM_VAR"; break;
         case NodeType::NODE_VARIABLE_SCOPE: type_str = "VAR_SCOPE"; break;
-        case NodeType::NODE_EXPRESSION_PLACEHOLDER: type_str = "EXPR_PLACEHOLDER"; break;
+        case NodeType::NODE_EXPR: type_str = "EXPR"; break;
         case NodeType::NODE_SIMPLE_EXPRESSION: type_str = "SIMPLE_EXPRESSION"; break;
+        case NodeType::NODE_INTERVAL_EXPRESSION: type_str = "INTERVAL_EXPRESSION"; break;
         case NodeType::NODE_AGGREGATE_FUNCTION_CALL: type_str = "AGGREGATE_FUNC_CALL"; break;
         case NodeType::NODE_SET_NAMES: type_str = "SET_NAMES"; break;
         case NodeType::NODE_SET_CHARSET: type_str = "SET_CHARSET"; break;
@@ -169,6 +191,7 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_ORDER_BY_CLAUSE: type_str = "ORDER_BY_CLAUSE"; break;
         case NodeType::NODE_ORDER_BY_ITEM: type_str = "ORDER_BY_ITEM"; break;
         case NodeType::NODE_LIMIT_CLAUSE: type_str = "LIMIT_CLAUSE"; break;
+        case NodeType::NODE_ESCAPE_CLAUSE: type_str = "ESCAPE_CLAUSE"; break;
         case NodeType::NODE_COMPARISON_EXPRESSION: type_str = "COMPARISON_EXPR"; break;
         case NodeType::NODE_LOGICAL_AND_EXPRESSION: type_str = "LOGICAL_AND_EXPR"; break;
         case NodeType::NODE_OPERATOR: type_str = "OPERATOR"; break;
@@ -176,6 +199,7 @@ inline void print_ast(const AstNode* node, int indent = 0) {
         case NodeType::NODE_SELECT_OPTIONS: type_str = "SELECT_OPTIONS"; break;
         case NodeType::NODE_SELECT_ITEM_LIST: type_str = "SELECT_ITEM_LIST"; break;
         case NodeType::NODE_SELECT_ITEM: type_str = "SELECT_ITEM"; break;
+        case NodeType::NODE_SELECT_RAW_SUBQUERY: type_str = "NODE_SELECT_RAW_SUBQUERY:"; break;
         case NodeType::NODE_ALIAS: type_str = "ALIAS"; break;
         case NodeType::NODE_TABLE_REFERENCE: type_str = "TABLE_REFERENCE"; break;
         case NodeType::NODE_GROUP_BY_CLAUSE: type_str = "GROUP_BY_CLAUSE"; break;

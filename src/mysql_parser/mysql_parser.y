@@ -31,7 +31,7 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 // Tokens
 %token TOKEN_SELECT TOKEN_FROM TOKEN_INSERT TOKEN_INTO TOKEN_VALUES
 %token TOKEN_LPAREN TOKEN_RPAREN TOKEN_SEMICOLON TOKEN_ASTERISK
-%token TOKEN_PLUS TOKEN_MINUS TOKEN_DIVIDE
+%token TOKEN_PLUS TOKEN_MINUS TOKEN_DIVIDE TOKEN_DIV
 %token TOKEN_SET TOKEN_NAMES TOKEN_CHARACTER TOKEN_GLOBAL TOKEN_SESSION TOKEN_PERSIST TOKEN_PERSIST_ONLY
 %token TOKEN_DOT TOKEN_DEFAULT TOKEN_COLLATE TOKEN_COMMA
 %token TOKEN_SPECIAL TOKEN_DOUBLESPECIAL
@@ -39,9 +39,10 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 
 %token TOKEN_DELETE TOKEN_LOW_PRIORITY TOKEN_QUICK TOKEN_IGNORE_SYM
 %token TOKEN_USING TOKEN_ORDER TOKEN_BY TOKEN_LIMIT TOKEN_ASC TOKEN_DESC TOKEN_WHERE
-%token TOKEN_AS TOKEN_DISTINCT TOKEN_GROUP TOKEN_ALL TOKEN_HAVING TOKEN_AND
+%token TOKEN_AS TOKEN_DISTINCT TOKEN_GROUP TOKEN_ALL TOKEN_ANY TOKEN_HAVING TOKEN_AND
 
-%token TOKEN_JOIN TOKEN_INNER TOKEN_LEFT TOKEN_RIGHT TOKEN_FULL TOKEN_OUTER TOKEN_CROSS TOKEN_NATURAL TOKEN_ON
+%token TOKEN_JOIN TOKEN_INNER TOKEN_LEFT TOKEN_RIGHT TOKEN_FULL TOKEN_OUTER TOKEN_CROSS TOKEN_ON
+%token TOKEN_NATURAL TOKEN_LANGUAGE TOKEN_WITH TOKEN_QUERY TOKEN_EXPANSION
 
 %token TOKEN_EQUAL TOKEN_LESS TOKEN_GREATER TOKEN_LESS_EQUAL TOKEN_GREATER_EQUAL TOKEN_NOT_EQUAL
 
@@ -66,6 +67,53 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %token TOKEN_IS TOKEN_NULL_KEYWORD TOKEN_NOT /* Added for IS NULL / IS NOT NULL */
 %token TOKEN_OFFSET /* Added for LIMIT ... OFFSET ... */
 
+// Add these to your existing %token declarations
+// Make sure TOKEN_PERCENT is defined if you use '%' operator
+%token TOKEN_PERCENT // For '%' modulo operator
+
+%token TOKEN_XOR
+%token TOKEN_TRUE TOKEN_FALSE TOKEN_UNKNOWN
+%token TOKEN_BINARY TOKEN_ROW TOKEN_SYSTEM
+%token TOKEN_BETWEEN
+%token TOKEN_MEMBER
+
+// TOKEN_OF is likely already defined for other contexts (e.g., LOCKING OF table)
+// %token TOKEN_OF
+%token TOKEN_SOUNDS // For SOUNDS (used in SOUNDS LIKE)
+%token TOKEN_LIKE   // For LIKE operator keyword
+%token TOKEN_ESCAPE
+%token TOKEN_REGEXP // For REGEXP operator keyword (MySQL also uses RLIKE)
+%token TOKEN_INTERVAL
+%token TOKEN_DIV_KEYWORD // For DIV integer division keyword
+%token TOKEN_MOD_KEYWORD // For MOD keyword
+%token TOKEN_BITWISE_XOR // For ^ bitwise XOR operator
+%token TOKEN_BITWISE_OR  // For | bitwise OR operator
+%token TOKEN_BITWISE_AND // For & bitwise AND operator
+%token TOKEN_BITWISE_LSHIFT // For << bitwise left shift operator
+%token TOKEN_BITWISE_RSHIFT // For >> bitwise right shift operator
+
+// Intervals
+%token TOKEN_DAY_HOUR TOKEN_DAY_MICROSECOND TOKEN_DAY_MINUTE TOKEN_DAY_SECOND TOKEN_HOUR_MICROSECOND TOKEN_HOUR_MINUTE
+%token TOKEN_HOUR_SECOND TOKEN_MINUTE_MICROSECOND TOKEN_MINUTE_SECOND TOKEN_SECOND_MICROSECOND TOKEN_YEAR_MONTH
+
+// Timestamps
+%token TOKEN_DAY TOKEN_WEEK TOKEN_HOUR TOKEN_MINUTE TOKEN_MONTH TOKEN_QUARTER TOKEN_SECOND TOKEN_MICROSECOND TOKEN_YEAR
+
+// For qualified system variables like @@PERSIST.var
+%token TOKEN_PERSIST_ONLY_VAR_PREFIX // For @@PERSIST_ONLY.
+
+// Add these to your existing %type declarations
+%type <node_val> expr boolean_primary_expr predicate bit_expr literal_or_null simple_bit_expr select_subexpr
+%type <node_val> truth_value opt_not opt_escape all_or_any
+
+// Dates
+%type <node_val> interval timestamp
+
+// Replace your existing expression-related precedence rules with these.
+// This order defines precedence from lowest to highest.
+// Ensure UMINUS is defined if you have unary minus.
+// %right UMINUS // Already in your grammar for unary minus
+
 %token <str_val> TOKEN_QUIT
 %token <str_val> TOKEN_IDENTIFIER
 %token <str_val> TOKEN_STRING_LITERAL
@@ -74,12 +122,13 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 // Types
 %type <node_val> statement simple_statement command_statement select_statement insert_statement delete_statement
 %type <node_val> identifier_node string_literal_node number_literal_node value_for_insert optional_semicolon show_statement begin_statement commit_statement
-%type <node_val> set_statement set_option_list set_option set_transaction_statement transaction_characteristic_list transaction_characteristic isolation_level_spec
+%type <node_val> set_statement set_option_value_list set_option_value set_transaction_statement transaction_characteristic_list transaction_characteristic isolation_level_spec
 %type <node_val> variable_to_set user_variable system_variable_unqualified system_variable_qualified
 %type <node_val> variable_scope
-%type <node_val> expression_placeholder simple_expression aggregate_function_call function_call_placeholder match_against_expression opt_search_modifier
-%type <node_val> opt_expression_placeholder_list // expression_placeholder_list is removed as it's replaced by expression_list for args
+%type <node_val> aggregate_function_call function_call_placeholder opt_search_modifier opt_with_query_expansion
+%type <node_val> opt_expr_list // expr_list is removed as it's replaced by expression_list for args
 %type <node_val> set_names_stmt set_charset_stmt charset_name_or_default collation_name_choice
+%type <node_val> subquery_parts_args subquery_part any_token opt_of
 
 %type <node_val> opt_delete_options delete_option delete_option_item_list
 %type <node_val> opt_where_clause opt_having_clause
@@ -96,7 +145,7 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 
 %type <node_val> table_reference table_reference_inner
 %type <node_val> joined_table opt_join_type join_type_natural_spec opt_join_condition join_condition
-%type <node_val> identifier_list_for_using
+%type <node_val> identifier_list_args identifier_list
 
 %type <node_val> opt_into_clause into_clause user_var_list
 %type <node_val> opt_into_outfile_options_list opt_into_outfile_options_list_tail into_outfile_options_list into_outfile_option
@@ -114,20 +163,26 @@ int mysql_yylex(union MYSQL_YYSTYPE* yylval_param, yyscan_t yyscanner, MysqlPars
 %type <node_val> values_clause value_row_list value_row expression_list
 
 // Precedence
+%left TOKEN_SET
 %left TOKEN_OR
-%left TOKEN_AND
-%right TOKEN_NOT // For logical NOT
+%left TOKEN_XOR TOKEN_AND TOKEN_NOT
+%left AND_SYM AND_AND_SYM
+%left TOKEN_BETWEEN TOKEN_CASE WHEN_SYM THEN_SYM ELSE
+%left '|'
+%left '&'
+%left TOKEN_BITWISE_LSHIFT TOKEN_BITWISE_RSHIFT
+%left '-' '+'
+%left '*' '/' '%' TOKEN_DIV TOKEN_MOD
+%left '^'
+%left TOKEN_NEG '~'
 
-%left TOKEN_EQUAL TOKEN_LESS TOKEN_GREATER TOKEN_LESS_EQUAL TOKEN_GREATER_EQUAL TOKEN_NOT_EQUAL TOKEN_IS // Added TOKEN_IS
-
-%left TOKEN_PLUS TOKEN_MINUS
-%left TOKEN_ASTERISK TOKEN_DIVIDE
+%left TOKEN_EQUAL TOKEN_LESS TOKEN_GREATER TOKEN_LESS_EQUAL TOKEN_GREATER_EQUAL TOKEN_NOT_EQUAL
+%left TOKEN_IS TOKEN_LIKE
 
 // For Unary Minus (Query 4)
 %right UMINUS
 
 %left TOKEN_ON TOKEN_USING
-%left TOKEN_NATURAL
 %left TOKEN_LEFT TOKEN_RIGHT TOKEN_FULL
 %left TOKEN_INNER TOKEN_CROSS
 %left TOKEN_JOIN
@@ -346,7 +401,7 @@ select_item:
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SELECT_ITEM);
         $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_ASTERISK, "*"));
     }
-    | expression_placeholder opt_alias {
+    | expr opt_alias {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SELECT_ITEM);
         $$->addChild($1);
         if ($2) {
@@ -735,22 +790,26 @@ opt_join_condition:
     ;
 
 join_condition:
-    TOKEN_ON expression_placeholder {
+    TOKEN_ON expr {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_JOIN_CONDITION_ON);
-        $$->addChild($2); // expression_placeholder
+        $$->addChild($2); // expr
     }
-    | TOKEN_USING TOKEN_LPAREN identifier_list_for_using TOKEN_RPAREN {
+    | TOKEN_USING TOKEN_LPAREN identifier_list TOKEN_RPAREN {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_JOIN_CONDITION_USING);
-        $$->addChild($3); // identifier_list_for_using
+        $$->addChild($3); // identifier_list
     }
     ;
 
-identifier_list_for_using:
+identifier_list_args:
+   identifier_list
+   | '(' identifier_list ')' { $$ = $2; }
+
+identifier_list:
     identifier_node {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_COLUMN_LIST); // Re-use for list of identifiers
         $$->addChild($1);
     }
-    | identifier_list_for_using TOKEN_COMMA identifier_node {
+    | identifier_list TOKEN_COMMA identifier_node {
         $1->addChild($3);
         $$ = $1;
     }
@@ -777,24 +836,13 @@ column_list_item:
     identifier_node { $$ = $1; }
     ;
 
-expression_list:
-    expression_placeholder {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "expr_list_wrapper");
-        $$->addChild($1);
-    }
-    | expression_list TOKEN_COMMA expression_placeholder {
-        $1->addChild($3);
-        $$ = $1;
-    }
-    ;
-
 value_row:
     TOKEN_LPAREN expression_list TOKEN_RPAREN { $$ = $2; }
     ;
 
 value_row_list:
     value_row {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "value_row_list_wrapper");
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "value_row_list_wrapper");
         $$->addChild($1);
     }
     | value_row_list TOKEN_COMMA value_row {
@@ -806,7 +854,7 @@ value_row_list:
 values_clause:
     TOKEN_VALUES value_row_list {
         // Create a specific node for VALUES clause for clarity in AST
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "VALUES_CLAUSE"); // Placeholder type
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "VALUES_CLAUSE"); // Placeholder type
         // Consider creating NODE_VALUES_CLAUSE in mysql_ast.h
         $$->addChild($2); // Add the value_row_list_wrapper
     }
@@ -907,7 +955,7 @@ isolation_level_spec:
 
 transaction_characteristic:
     TOKEN_ISOLATION TOKEN_LEVEL isolation_level_spec {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "ISOLATION_LEVEL"); // Placeholder type
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "ISOLATION_LEVEL"); // Placeholder type
         // Consider NODE_TXN_ISOLATION_LEVEL in mysql_ast.h
         $$->addChild($3); // isolation_level_spec
     }
@@ -918,7 +966,7 @@ transaction_characteristic:
 
 transaction_characteristic_list:
     transaction_characteristic {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "TXN_CHAR_LIST"); // Placeholder type
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "TXN_CHAR_LIST"); // Placeholder type
         // Consider NODE_TXN_CHARACTERISTIC_LIST in mysql_ast.h
         $$->addChild($1);
     }
@@ -950,7 +998,7 @@ set_transaction_statement:
 set_statement:
     TOKEN_SET set_names_stmt optional_semicolon { $$ = $2; }
     | TOKEN_SET set_charset_stmt optional_semicolon { $$ = $2; }
-    | TOKEN_SET set_option_list optional_semicolon {
+    | TOKEN_SET set_option_value_list optional_semicolon {
         // $2 is the "set_var_assignments" node.
         // The set_statement node should probably wrap this for consistency.
         MysqlParser::AstNode* set_vars_stmt = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SET_STATEMENT, "SET_VARIABLES");
@@ -990,23 +1038,595 @@ collation_name_choice:
     | identifier_node   { $$ = $1; }
     ;
 
-set_option_list: // List of variable assignments: @a=1, GLOBAL b=2
-    set_option {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "set_var_assignments_list"); // Placeholder type
-        // Consider NODE_VARIABLE_ASSIGNMENT_LIST in mysql_ast.h
+set_option_value_list: // List of variable assignments: @a=1, GLOBAL b=2
+    set_option_value {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SET_OPTION_VALUE_LIST); // Placeholder type
         $$->addChild($1); // $1 is NODE_VARIABLE_ASSIGNMENT
     }
-    | set_option_list TOKEN_COMMA set_option {
+    | set_option_value_list TOKEN_COMMA set_option_value {
         $1->addChild($3); // Add next NODE_VARIABLE_ASSIGNMENT to the list
         $$ = $1;
     }
     ;
 
-set_option:
-    variable_to_set TOKEN_EQUAL expression_placeholder {
+set_option_value:
+    variable_to_set TOKEN_EQUAL expr {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
         $$->addChild($1);
         $$->addChild($3);
+    }
+    | variable_to_set TOKEN_EQUAL TOKEN_DEFAULT {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
+        $$->addChild($1);
+        $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VALUE_LITERAL, "DEFAULT"));
+    }
+    | variable_to_set TOKEN_EQUAL TOKEN_ON {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
+        $$->addChild($1);
+        $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VALUE_LITERAL, "ON"));
+    }
+    | variable_to_set TOKEN_EQUAL TOKEN_ALL {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
+        $$->addChild($1);
+        $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VALUE_LITERAL, "ALL"));
+    }
+    | variable_to_set TOKEN_EQUAL TOKEN_BINARY {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
+        $$->addChild($1);
+        $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VALUE_LITERAL, "BINARY"));
+    }
+    | variable_to_set TOKEN_EQUAL TOKEN_ROW {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
+        $$->addChild($1);
+        $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VALUE_LITERAL, "ROW"));
+    }
+    | variable_to_set TOKEN_EQUAL TOKEN_SYSTEM {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_ASSIGNMENT);
+        $$->addChild($1);
+        $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VALUE_LITERAL, "SYSTEM"));
+    }
+    ;
+
+// Expression grammar rules:
+expr:
+    expr TOKEN_OR expr %prec TOKEN_OR {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "OR");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | expr TOKEN_XOR expr %prec TOKEN_XOR {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "XOR");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | expr TOKEN_AND expr %prec TOKEN_AND {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "AND");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | TOKEN_NOT expr %prec TOKEN_NOT {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "NOT");
+        $$->addChild($2);
+    }
+    | boolean_primary_expr %prec TOKEN_SET
+    ;
+
+opt_not:
+    /* empty */ { $$ = nullptr; }
+    | TOKEN_NOT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "NOT "); }
+    ;
+
+truth_value:
+    TOKEN_TRUE       { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "TRUE"); }
+    | TOKEN_FALSE    { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "FALSE"); }
+    | TOKEN_UNKNOWN  { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "UNKNOWN"); }
+    ;
+
+boolean_primary_expr:
+    boolean_primary_expr TOKEN_IS TOKEN_NULL_KEYWORD %prec TOKEN_IS {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NULL_EXPRESSION);
+        $$->addChild($1);
+    }
+    | boolean_primary_expr TOKEN_IS TOKEN_NOT TOKEN_NULL_KEYWORD %prec TOKEN_IS {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NOT_NULL_EXPRESSION);
+        $$->addChild($1);
+    }
+    | boolean_primary_expr TOKEN_IS opt_not truth_value %prec TOKEN_IS {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NOT_NULL_EXPRESSION);
+        $$->addChild($1);
+    }
+    | boolean_primary_expr comparison_operator predicate {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_COMPARISON_EXPRESSION, $2->value);
+        delete $2;
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | boolean_primary_expr comparison_operator all_or_any select_subexpr %prec TOKEN_EQUAL {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_COMPARISON_EXPRESSION, $2->value);
+        delete $2;
+        $$->addChild($1);
+        $$->addChild($3);
+        $$->addChild($4);
+    }
+    | predicate %prec TOKEN_SET
+    ;
+
+all_or_any:
+      TOKEN_ALL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "ALL"); }
+    | TOKEN_ANY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "ANY"); }
+    ;
+
+opt_of:
+    /* empty */ { $$ = nullptr; }
+    | TOKEN_OF  { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "OF "); }
+    ;
+
+opt_escape:
+    /* empty */                                                 { $$ = nullptr; }
+    | TOKEN_ESCAPE simple_bit_expr {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_ESCAPE_CLAUSE);
+        // The escape character expression (usually a string literal)
+        $$->addChild($2);
+    }
+    ;
+
+predicate:
+    bit_expr TOKEN_IN select_subexpr {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "IN");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr TOKEN_NOT TOKEN_IN select_subexpr {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "NOT IN");
+        $$->addChild($1);
+        $$->addChild($4);
+    }
+    | bit_expr TOKEN_IN TOKEN_LPAREN expression_list TOKEN_RPAREN {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "IN");
+        $$->addChild($1);
+        $$->addChild($4);
+    }
+    | bit_expr TOKEN_NOT TOKEN_IN TOKEN_LPAREN expression_list TOKEN_RPAREN {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "NOT IN");
+        $$->addChild($1);
+        $$->addChild($5);
+    }
+    | bit_expr opt_not TOKEN_LIKE simple_bit_expr {
+        std::string op_name = ($2 ? "NOT LIKE" : "LIKE");
+        if($2) delete $2;
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, op_name);
+        $$->addChild($1);
+        $$->addChild($4);
+    }
+    | bit_expr opt_not TOKEN_LIKE simple_bit_expr TOKEN_ESCAPE simple_bit_expr %prec TOKEN_LIKE {
+        std::string op_name = ($2 ? "NOT LIKE" : "LIKE");
+        if($2) delete $2;
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, op_name);
+        $$->addChild($1);
+        $$->addChild($4);
+        $$->addChild($6);
+    }
+    | bit_expr opt_not TOKEN_REGEXP bit_expr {
+        std::string op_name = ($2 ? "NOT REGEXP" : "REGEXP");
+        if($2) delete $2;
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, op_name);
+        $$->addChild($1);
+        $$->addChild($4);
+    }
+    | bit_expr opt_not TOKEN_BETWEEN bit_expr TOKEN_AND bit_expr {
+        std::string op_name = ($2 ? "NOT BETWEEN" : "BETWEEN");
+        if($2) delete $2;
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, op_name);
+        $$->addChild($1);
+        $$->addChild($4);
+        $$->addChild($6);
+    }
+    | bit_expr TOKEN_MEMBER opt_of '(' simple_bit_expr ')' {
+        std::string op_name = ($3 ? "MEMBER OF" : "MEMBER");
+        if($3) delete $3;
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, op_name);
+        $$->addChild($1);
+        $$->addChild($5);
+    }
+    | bit_expr TOKEN_SOUNDS TOKEN_LIKE bit_expr {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "SOUNDS LIKE");
+        $$->addChild($1);
+        $$->addChild($4);
+    }
+    | bit_expr TOKEN_MEMBER TOKEN_OF TOKEN_LPAREN bit_expr TOKEN_RPAREN {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "MEMBER OF");
+        $$->addChild($1);
+        $$->addChild($5); // The JSON array string expression
+    }
+    | bit_expr TOKEN_MEMBER TOKEN_LPAREN bit_expr TOKEN_RPAREN { // Example 48: MEMBER (json_array_string)
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "MEMBER OF"); // Normalizing to MEMBER OF
+        $$->addChild($1);
+        $$->addChild($4); // The JSON array string expression
+    }
+    | bit_expr %prec TOKEN_SET
+    ;
+
+bit_expr:
+    bit_expr '|' bit_expr %prec '|' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "|");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '&' bit_expr %prec '%' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "&");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr TOKEN_BITWISE_LSHIFT bit_expr %prec TOKEN_BITWISE_LSHIFT {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "<<");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr TOKEN_BITWISE_RSHIFT bit_expr %prec TOKEN_BITWISE_RSHIFT {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, ">>");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '+' bit_expr %prec '+' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "+");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '+' TOKEN_INTERVAL expr interval %prec '+' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "+");
+        $$->addChild($1);
+        $$->addChild($4);
+        $$->addChild($5);
+    }
+    | bit_expr '-' bit_expr %prec '-' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "-");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '-' TOKEN_INTERVAL expr interval %prec '-' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "-");
+        $$->addChild($1);
+        $$->addChild($4);
+        $$->addChild($5);
+    }
+    | bit_expr '*' bit_expr %prec '*' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "*");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '/' bit_expr %prec '/' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "/");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '%' bit_expr %prec '%' {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "%");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr TOKEN_DIV bit_expr %prec TOKEN_DIV {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "DIV");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr TOKEN_MOD bit_expr %prec TOKEN_MOD {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "MOD");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | bit_expr '^' bit_expr {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "^");
+        $$->addChild($1);
+        $$->addChild($3);
+    }
+    | simple_bit_expr %prec TOKEN_SET                         { $$ = $1; }
+    ;
+
+literal_or_null:
+    string_literal_node   { $$ = $1; }
+    | number_literal_node { $$ = $1; }
+    | TOKEN_TRUE          { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_BOOLEAN_LITERAL, "TRUE"); }
+    | TOKEN_FALSE         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_BOOLEAN_LITERAL, "FALSE"); }
+    | TOKEN_NULL_KEYWORD  { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_NULL_LITERAL, "NULL"); }
+    ;
+
+timestamp:
+      TOKEN_DAY         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "DAY"); }
+    | TOKEN_WEEK        { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "WEEK"); }
+    | TOKEN_HOUR        { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "HOUR"); }
+    | TOKEN_MINUTE      { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "MINUTE"); }
+    | TOKEN_MONTH       { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "MONTH"); }
+    | TOKEN_QUARTER     { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "QUARTER"); }
+    | TOKEN_SECOND      { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "SECOND"); }
+    | TOKEN_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "MICROSECOND"); }
+    | TOKEN_YEAR        { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_TIMESTAMP, "YEAR"); }
+    ;
+
+interval:
+      timestamp { $$ = $1; }
+    | TOKEN_DAY_HOUR           { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "DAY_HOUR"); }
+    | TOKEN_DAY_MICROSECOND    { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "DAY_MICROSECOND"); }
+    | TOKEN_DAY_MINUTE         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "DAY_MINUTE"); }
+    | TOKEN_DAY_SECOND         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "DAY_SECOND"); }
+    | TOKEN_HOUR_MICROSECOND   { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "HOUR_MICROSECOND"); }
+    | TOKEN_HOUR_MINUTE        { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "HOUR_MINUTE"); }
+    | TOKEN_HOUR_SECOND        { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "HOUR_SECOND"); }
+    | TOKEN_MINUTE_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "MINUTE_MICROSECOND"); }
+    | TOKEN_MINUTE_SECOND      { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "MINUTE_SECOND"); }
+    | TOKEN_SECOND_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "SECOND_MICROSECOND"); }
+    | TOKEN_YEAR_MONTH         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_INTERVAL, "YEAR_MONTH"); }
+    ;
+
+any_token:
+    TOKEN_SELECT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_FROM { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_INSERT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_INTO { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_VALUES { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_QUIT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SET { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NAMES { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_CHARACTER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_GLOBAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SESSION { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_PERSIST { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_PERSIST_ONLY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DEFAULT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_COLLATE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SHOW { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DATABASES { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_BEGIN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_COMMIT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_IS { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NULL_KEYWORD { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_TRUE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_FALSE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_UNKNOWN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_BINARY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ROW { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SYSTEM { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_NOT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_BETWEEN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MEMBER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ESCAPE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_REGEXP { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_OFFSET { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DELETE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LOW_PRIORITY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_QUICK { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_IGNORE_SYM { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_USING { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ORDER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_BY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LIMIT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ASC { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DESC { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_WHERE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_AS { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DISTINCT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_GROUP { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ALL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ANY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_HAVING { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_INTERVAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_OR { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_XOR { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_AND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_DIV { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MOD { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_JOIN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_INNER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LEFT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_RIGHT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_FULL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_OUTER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_CROSS { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NATURAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ON { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_DAY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_WEEK { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_HOUR { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MINUTE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MONTH { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_QUARTER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_YEAR { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DAY_HOUR { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DAY_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DAY_MINUTE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DAY_SECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_HOUR_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_HOUR_MINUTE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_HOUR_SECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MINUTE_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MINUTE_SECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SECOND_MICROSECOND { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_YEAR_MONTH { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_OUTFILE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DUMPFILE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_FOR { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_UPDATE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SHARE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_OF { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NOWAIT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SKIP { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LOCKED { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_TRANSACTION { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ISOLATION { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LEVEL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_READ { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_WRITE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_COMMITTED { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_UNCOMMITTED { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_REPEATABLE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SERIALIZABLE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MATCH { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_AGAINST { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_BOOLEAN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MODE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_IN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_FIELDS { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_TERMINATED { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_OPTIONALLY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ENCLOSED { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_ESCAPED { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LINES { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_STARTING { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_COUNT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SUM { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_AVG { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MAX { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_MIN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_SOUNDS { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LIKE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+
+    | TOKEN_GLOBAL_VAR_PREFIX { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_PERSIST_ONLY_VAR_PREFIX { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DOUBLESPECIAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SPECIAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_IDENTIFIER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | '*' { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | '+' { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | '-' { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | '/' { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | '%' { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | '^' { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NEG { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+//  | TOKEN_LPAREN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+//  | TOKEN_RPAREN { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_SEMICOLON { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_DOT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_COMMA { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_EQUAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LESS { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_GREATER { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_LESS_EQUAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_GREATER_EQUAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NOT_EQUAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_BITWISE_LSHIFT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_BITWISE_RSHIFT { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_NUMBER_LITERAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    | TOKEN_STRING_LITERAL { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_UNKNOWN, "PLACEHOLDER"); }
+    ;
+
+subquery_parts_args:
+    subquery_part { $$ = $1; }
+    | subquery_parts_args subquery_part { $$ = $2; }
+    ;
+
+subquery_part:
+    any_token { $$ = $1; }
+    | TOKEN_LPAREN subquery_parts_args TOKEN_RPAREN { $$ = $2; }
+    // For functions like 'count()'; TODO: Can be improved
+    | TOKEN_LPAREN TOKEN_RPAREN { $$ = nullptr; }
+    ;
+
+select_subexpr:
+    TOKEN_LPAREN TOKEN_SELECT subquery_parts_args TOKEN_RPAREN {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SELECT_RAW_SUBQUERY, "SELECT_SUBEXPR");
+    }
+    ;
+
+simple_bit_expr:
+    // Identifiers / Variables: Exprs can be other vars
+    qualified_identifier_node                                   { $$ = $1; } // TODO: Can be improved
+    | user_variable                                             { $$ = $1; }
+    // Qualified system vars - @@GLOBAL.var, @@SESSION.var, @@var etc.
+    | system_variable_qualified                                 { $$ = $1; }
+    // Not qualified system vars - E.g: 'sql_mode'
+    | system_variable_unqualified                               { $$ = $1; }
+    // Functions
+    | aggregate_function_call                                   { $$ = $1; }
+    | function_call_placeholder                                 { $$ = $1; }
+    // Parenthesized expression
+    | TOKEN_LPAREN expr TOKEN_RPAREN                            { $$ = $2; }
+    // Literal values
+    | literal_or_null
+    // Single operator bit_expr
+    | '+' simple_bit_expr %prec TOKEN_NEG {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "+");
+        $$->addChild($2);
+    }
+    | '-' simple_bit_expr %prec TOKEN_NEG {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "-");
+        $$->addChild($2);
+    }
+    | TOKEN_NEG simple_bit_expr %prec TOKEN_NEG {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "~");
+        $$->addChild($2);
+    }
+    // Select subexpressions -- NOTE: Simplified for now for SET statements
+    | select_subexpr                                            { $$ = $1; }
+    // MATCH-AGAINST
+    | TOKEN_MATCH identifier_list_args TOKEN_AGAINST TOKEN_LPAREN bit_expr opt_search_modifier TOKEN_RPAREN {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "MATCH_AGAINST");
+        // identifier list (columns)
+        $$->addChild($2);
+        // bit_expr (string search)
+        $$->addChild($5);
+        // search modifier
+        $$->addChild($6);
+    }
+    ;
+
+// Update system_variable_qualified to include PERSIST and PERSIST_ONLY prefixes
+system_variable_qualified:
+    TOKEN_DOUBLESPECIAL identifier_node { // @@var (session scope by default or based on var type)
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
+        // Optionally add an implicit scope node if needed for AST consistency, e.g., "SESSION"
+        // MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "SESSION");
+        // $$->addChild(scope_node);
+        delete $2;
+    }
+    | TOKEN_GLOBAL_VAR_PREFIX identifier_node { // @@GLOBAL.var
+        MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "GLOBAL");
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
+        $$->addChild(scope_node);
+        delete $2;
+    }
+    | TOKEN_SESSION_VAR_PREFIX identifier_node { // @@SESSION.var or @@LOCAL.var
+        MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "SESSION");
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
+        $$->addChild(scope_node);
+        delete $2;
+    }
+    | TOKEN_PERSIST_VAR_PREFIX identifier_node { // @@PERSIST.var
+        MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "PERSIST");
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
+        $$->addChild(scope_node);
+        delete $2;
+    }
+    | TOKEN_PERSIST_ONLY_VAR_PREFIX identifier_node { // @@PERSIST_ONLY.var
+        MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "PERSIST_ONLY");
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
+        $$->addChild(scope_node);
+        delete $2;
+    }
+    ;
+
+// Update expression_list if it's used for function arguments or IN (...) lists
+// The existing expression_list uses expr. It should use expr.
+expression_list:
+    expr { // Changed from expr
+        // Consider a more specific NodeType like NODE_EXPRESSION_LIST
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "expr_list_wrapper");
+        $$->addChild($1);
+    }
+    | expression_list TOKEN_COMMA expr { // Changed from expr
+        $1->addChild($3);
+        $$ = $1;
     }
     ;
 
@@ -1036,26 +1656,6 @@ system_variable_unqualified:
     identifier_node { $$ = $1; } // Returns identifier_node
     ;
 
-system_variable_qualified:
-    TOKEN_DOUBLESPECIAL identifier_node {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
-        // Could add an implicit scope node if desired, e.g. "SESSION" if @@var implies session
-        delete $2;
-    }
-    | TOKEN_GLOBAL_VAR_PREFIX identifier_node {
-        MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "GLOBAL");
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
-        $$->addChild(scope_node);
-        delete $2;
-    }
-    | TOKEN_SESSION_VAR_PREFIX identifier_node {
-        MysqlParser::AstNode* scope_node = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "SESSION");
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_SYSTEM_VARIABLE, $2->value);
-        $$->addChild(scope_node);
-        delete $2;
-    }
-    ;
-
 variable_scope:
     TOKEN_GLOBAL        { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "GLOBAL"); }
     | TOKEN_SESSION       { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_VARIABLE_SCOPE, "SESSION"); }
@@ -1066,7 +1666,7 @@ variable_scope:
 /* --- Common Optional Clauses --- */
 opt_where_clause:
     /* empty */ { $$ = nullptr; }
-    | TOKEN_WHERE expression_placeholder {
+    | TOKEN_WHERE expr {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_WHERE_CLAUSE);
         $$->addChild($2);
     }
@@ -1074,7 +1674,7 @@ opt_where_clause:
 
 opt_having_clause:
     /* empty */ { $$ = nullptr; }
-    | TOKEN_HAVING expression_placeholder {
+    | TOKEN_HAVING expr {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_HAVING_CLAUSE);
         $$->addChild($2);
     }
@@ -1097,9 +1697,9 @@ order_by_list:
     ;
 
 order_by_item:
-    expression_placeholder opt_asc_desc {
+    expr opt_asc_desc {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_ORDER_BY_ITEM);
-        $$->addChild($1); // expression_placeholder
+        $$->addChild($1); // expr
         if ($2) { // opt_asc_desc (ASC/DESC keyword node)
             $$->addChild($2);
         }
@@ -1154,7 +1754,7 @@ group_by_list:
     ;
 
 grouping_element:
-    expression_placeholder { $$ = $1; } // Can be column, expression
+    expr { $$ = $1; } // Can be column, expression
     // Add WITH ROLLUP if needed
     ;
 
@@ -1211,77 +1811,20 @@ commit_statement:
     }
     ;
 
-/* --- Expression related rules --- */
-expression_placeholder:
-    simple_expression { $$ = $1; }
-    | expression_placeholder TOKEN_AND expression_placeholder {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_LOGICAL_AND_EXPRESSION);
-        $$->addChild($1);
-        $$->addChild($3);
+opt_with_query_expansion:
+    /* empty */ { $$ = nullptr; }
+    | TOKEN_WITH TOKEN_QUERY TOKEN_EXPANSION {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "WITH QUERY EXPANSION");
     }
-    | expression_placeholder comparison_operator expression_placeholder {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_COMPARISON_EXPRESSION, $2->value);
-        delete $2;
-        $$->addChild($1);
-        $$->addChild($3);
-    }
-    | expression_placeholder TOKEN_IS TOKEN_NULL_KEYWORD { // Covers `expr IS NULL`
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NULL_EXPRESSION);
-        $$->addChild($1); // The expression part
-    }
-    | expression_placeholder TOKEN_IS TOKEN_NOT TOKEN_NULL_KEYWORD { // Covers `expr IS NOT NULL`
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_IS_NOT_NULL_EXPRESSION);
-        $$->addChild($1); // The expression part
-    }
-    | match_against_expression { $$ = $1; }
-    ;
-
-simple_expression:
-    string_literal_node     { $$ = $1; }
-    | number_literal_node   { $$ = $1; }
-    | qualified_identifier_node { $$ = $1; }
-    | identifier_node       { $$ = $1; }
-    | user_variable         { $$ = $1; }
-    | system_variable_qualified { $$ = $1; }
-    | TOKEN_DEFAULT         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "DEFAULT"); }
-    | aggregate_function_call { $$ = $1; }
-    | function_call_placeholder {$$ = $1; }
-    | TOKEN_LPAREN expression_placeholder TOKEN_RPAREN { $$ = $2; } // Important for `(expr IS NOT NULL)`
-    | simple_expression TOKEN_PLUS simple_expression {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "+");
-        $$->addChild($1); $$->addChild($3);
-    }
-    | simple_expression TOKEN_MINUS simple_expression {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "-");
-        $$->addChild($1); $$->addChild($3);
-    }
-    | simple_expression TOKEN_ASTERISK simple_expression {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "*");
-        $$->addChild($1); $$->addChild($3);
-    }
-    | simple_expression TOKEN_DIVIDE simple_expression {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "/");
-        $$->addChild($1); $$->addChild($3);
-    }
-    | TOKEN_MINUS simple_expression %prec UMINUS {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_OPERATOR, "-");
-        $$->addChild($2); // Child is the expression being negated
-    }
-    ;
 
 opt_search_modifier:
-    /* empty */ { $$ = nullptr; }
-    | TOKEN_IN TOKEN_BOOLEAN TOKEN_MODE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "IN BOOLEAN MODE"); }
-    ;
-
-match_against_expression:
-    TOKEN_MATCH TOKEN_LPAREN expression_list TOKEN_RPAREN TOKEN_AGAINST TOKEN_LPAREN expression_placeholder opt_search_modifier TOKEN_RPAREN {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "MATCH_AGAINST"); // Placeholder type
-        // Consider NODE_MATCH_AGAINST_EXPRESSION in mysql_ast.h
-        $$->addChild($3); // expression_list (columns)
-        $$->addChild($7); // expression_placeholder (search string)
-        if ($8) $$->addChild($8); // opt_search_modifier
+    TOKEN_IN TOKEN_BOOLEAN TOKEN_MODE {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "IN BOOLEAN MODE");
     }
+    | TOKEN_IN TOKEN_NATURAL TOKEN_LANGUAGE TOKEN_MODE opt_with_query_expansion {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "IN NATURAL LANGUAGE MODE");
+    }
+    | opt_with_query_expansion
     ;
 
 aggregate_function_call:
@@ -1289,23 +1832,23 @@ aggregate_function_call:
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_AGGREGATE_FUNCTION_CALL, "COUNT");
         $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_ASTERISK, "*"));
     }
-    | TOKEN_COUNT TOKEN_LPAREN expression_placeholder TOKEN_RPAREN {
+    | TOKEN_COUNT TOKEN_LPAREN expr TOKEN_RPAREN {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_AGGREGATE_FUNCTION_CALL, "COUNT");
         $$->addChild($3);
     }
-    | TOKEN_SUM TOKEN_LPAREN expression_placeholder TOKEN_RPAREN {
+    | TOKEN_SUM TOKEN_LPAREN expr TOKEN_RPAREN {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_AGGREGATE_FUNCTION_CALL, "SUM");
         $$->addChild($3);
     }
-    | TOKEN_AVG TOKEN_LPAREN expression_placeholder TOKEN_RPAREN {
+    | TOKEN_AVG TOKEN_LPAREN expr TOKEN_RPAREN {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_AGGREGATE_FUNCTION_CALL, "AVG");
         $$->addChild($3);
     }
-    | TOKEN_MAX TOKEN_LPAREN expression_placeholder TOKEN_RPAREN {
+    | TOKEN_MAX TOKEN_LPAREN expr TOKEN_RPAREN {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_AGGREGATE_FUNCTION_CALL, "MAX");
         $$->addChild($3);
     }
-    | TOKEN_MIN TOKEN_LPAREN expression_placeholder TOKEN_RPAREN {
+    | TOKEN_MIN TOKEN_LPAREN expr TOKEN_RPAREN {
         $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_AGGREGATE_FUNCTION_CALL, "MIN");
         $$->addChild($3);
     }
@@ -1321,8 +1864,8 @@ comparison_operator:
     ;
 
 function_call_placeholder:
-    identifier_node TOKEN_LPAREN opt_expression_placeholder_list TOKEN_RPAREN {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "FUNC_CALL:" + $1->value); // Placeholder type
+    identifier_node TOKEN_LPAREN opt_expr_list TOKEN_RPAREN {
+        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "FUNC_CALL:" + $1->value); // Placeholder type
         // Consider NODE_FUNCTION_CALL in mysql_ast.h
         $$->addChild($1);
         if ($3) {
@@ -1330,12 +1873,12 @@ function_call_placeholder:
         } else {
             // Add an empty list node for functions with no arguments, e.g., NOW()
             // This ensures the function call node always has a child for arguments, even if empty.
-            $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPRESSION_PLACEHOLDER, "empty_arg_list_wrapper"));
+            $$->addChild(new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "empty_arg_list_wrapper"));
         }
     }
     ;
 
-opt_expression_placeholder_list:
+opt_expr_list:
     /* empty */ { $$ = nullptr; }
     | expression_list { $$ = $1; }
     ;
