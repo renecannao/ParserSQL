@@ -2,7 +2,7 @@
 CXX = g++
 LINKER = g++
 
-CXXFLAGS = -std=c++17 -Wall -g -O2
+CXXFLAGS = -std=c++17 -Wall -g -O2 -DYYDEBUG=1
 CPPFLAGS = -I$(PROJECT_ROOT)/include
 
 PROJECT_ROOT = .
@@ -75,7 +75,7 @@ $(PGSQL_EXAMPLE_EXE): $(PGSQL_EXAMPLE_OBJS) $(PGSQL_TARGET_LIB)
 	@echo "Created PostgreSQL example $@"
 
 $(PGSQL_BISON_H) $(PGSQL_BISON_C): $(PGSQL_PARSER_SRC_DIR)/pgsql_parser.y $(PGSQL_PARSER_INCLUDE_DIR)/pgsql_ast.h $(PGSQL_PARSER_INCLUDE_DIR)/pgsql_parser.h
-	cd $(PGSQL_PARSER_SRC_DIR) && bison -d -v --report=all pgsql_parser.y
+	cd $(PGSQL_PARSER_SRC_DIR) && bison -Wcounterexamples -d -v --report=all pgsql_parser.y
 
 $(PGSQL_FLEX_C): $(PGSQL_PARSER_SRC_DIR)/pgsql_lexer.l $(PGSQL_BISON_H)
 	cd $(PGSQL_PARSER_SRC_DIR) && flex -o $(PGSQL_FLEX_C_FILE) pgsql_lexer.l
@@ -112,7 +112,7 @@ $(MYSQL_STDIN_EXAMPLE_EXE): $(MYSQL_STDIN_EXAMPLE_OBJS) $(MYSQL_TARGET_LIB)
 	@echo "Created MySQL STDIN parser example $@"
 
 $(MYSQL_BISON_H) $(MYSQL_BISON_C): $(MYSQL_PARSER_SRC_DIR)/mysql_parser.y $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h
-	cd $(MYSQL_PARSER_SRC_DIR) && bison -d -v --report=all -o $(MYSQL_BISON_C_FILE) --defines=$(MYSQL_BISON_H_FILE) mysql_parser.y
+	cd $(MYSQL_PARSER_SRC_DIR) && bison -Wcounterexamples -d -v --report=all -o $(MYSQL_BISON_C_FILE) --defines=$(MYSQL_BISON_H_FILE) mysql_parser.y
 
 $(MYSQL_FLEX_C): $(MYSQL_PARSER_SRC_DIR)/mysql_lexer.l $(MYSQL_BISON_H)
 	cd $(MYSQL_PARSER_SRC_DIR) && flex -o $(MYSQL_FLEX_C_FILE) mysql_lexer.l
