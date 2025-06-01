@@ -14,7 +14,7 @@ namespace MysqlParser {
  *
  * This function recursively traverses the AST starting from the given 'node'
  * and builds a string representation of the expression. Expression tokens
- * are separated by exactly one space.
+ * are separated by exactly one space unless context dictates otherwise (e.g., commas).
  *
  * @param node A pointer to the AstNode representing the root of the expression (or sub-expression).
  * @return std::string The reconstructed expression string.
@@ -27,13 +27,12 @@ inline std::string build_str_expr(const AstNode* node) {
 
     switch (node->type) {
         // Literals & Simple Identifiers: These nodes directly provide their string representation.
-        case NodeType::NODE_STRING_LITERAL:       // e.g., "'hello'", value includes quotes
+        case NodeType::NODE_STRING_LITERAL:       // e.g., "'hello'", value includes quotes. Parser must populate node->value.
         case NodeType::NODE_NUMBER_LITERAL:       // e.g., "123", "3.14"
         case NodeType::NODE_BOOLEAN_LITERAL:      // e.g., "TRUE", "FALSE"
         case NodeType::NODE_NULL_LITERAL:         // e.g., "NULL"
         case NodeType::NODE_TIMESTAMP:            // e.g., "'2024-05-30 10:00:00'"
-        case NodeType::NODE_IDENTIFIER:           // e.g., "column_name"
-        case NodeType::NODE_SYSTEM_VARIABLE:      // e.g., "@@global.var_name"
+        case NodeType::NODE_IDENTIFIER:           // e.g., "column_name" or function name if not part of FUNC_CALL structure
         case NodeType::NODE_ASTERISK:             // e.g., "*"
         case NodeType::NODE_VALUE_LITERAL:        // For keywords used as values, e.g. 'ON' in some contexts
         case NodeType::NODE_LEFT_SHIFT_OPERATOR:  // Value is "<<"
@@ -43,82 +42,74 @@ inline std::string build_str_expr(const AstNode* node) {
             break;
 
         case NodeType::NODE_USER_VARIABLE:        // e.g., "@my_var"
-        {
+            // The parser should ensure node->value contains the variable name without '@'
+            // Or if it includes '@', this logic might need adjustment based on parser behavior.
+            // Assuming node->value is "my_var"
             result = "@" + node->value;
-        }
-        break;
+            break;
+
+        case NodeType::NODE_SYSTEM_VARIABLE:      // e.g., "@@global.var_name", "session var_name", "var_name"
+            // node->value is the base variable name, e.g., "max_connections", "sort_buffer_size", "@@var", "var"
+            // Children might contain VAR_SCOPE
+            if (!node->children.empty() && node->children[0]->type == NodeType::NODE_VARIABLE_SCOPE) {
+                // Case: Explicit scope child present (e.g., from "GLOBAL var" or "@@GLOBAL.var")
+                // AST typically has node->value as base name (e.g., "sort_buffer_size")
+                // and child VAR_SCOPE has scope value (e.g., "GLOBAL")
+                const AstNode* scope_node = node->children[0];
+                // Reconstruct as @@SCOPE.VAR_NAME for consistency.
+                // This turns "GLOBAL sort_buffer_size" into "@@GLOBAL.sort_buffer_size".
+                // "@@GLOBAL.sort_buffer_size" (if parsed to this AST structure) also becomes "@@GLOBAL.sort_buffer_size".
+                result = "@@" + scope_node->value + "." + node->value;
+            } else {
+                // Case: No explicit scope child.
+                // node->value could be "@@var_name" (e.g. "@@sql_select_limit")
+                // or just "var_name" (e.g. "sql_select_limit", implying session scope usually).
+                // These should be used as is from node->value.
+                result = node->value;
+            }
+            break;
+
         case NodeType::NODE_OPERATOR:             // For operators like "+", "-", "=", "OR", "AND" if parsed as a single token node
         {
-            if (node->children.size() > 1) {
+            if (node->children.size() > 1) { // Binary operator
                 result = build_str_expr(node->children[0]) + " " + node->value + " " + build_str_expr(node->children[1]);
-            } else {
+            } else if (node->children.size() == 1) { // Unary operator (assuming prefix, e.g. NOT expr, -expr)
                 result = node->value + " " + build_str_expr(node->children[0]);
+            } else { // Operator token itself, e.g. if it's part of a comparison expression like `node->children[1]` in `NODE_COMPARISON_EXPRESSION`
+                 result = node->value;
             }
         }
         break;
+
         case NodeType::NODE_SET_STATEMENT:
         {
             result = "SET"; // The SET keyword
-
-            // Expecting one child: a NODE_EXPR that represents the list of variable assignments.
-            if (node->children.size() == 1) {
-                const AstNode* assignments_list_expr_node = node->children[0];
-                // We expect this child to be the NODE_EXPR (set_var_assignments_list)
-                // Calling build_str_expr on this node should yield the string for all assignments.
-                std::string assignments_list_str = build_str_expr(assignments_list_expr_node);
-
+            if (!node->children.empty()) {
+                // Expecting one child: typically a NODE_SET_OPTION_VALUE_LIST or a single NODE_VARIABLE_ASSIGNMENT
+                std::string assignments_list_str = build_str_expr(node->children[0]);
                 if (!assignments_list_str.empty()) {
                     result += " " + assignments_list_str;
                 }
-            } else if (node->children.empty()) {
-                // Just "SET" if there are no assignments (e.g. "SET;" - though typically invalid without assignments)
-            } else {
-                // If there are multiple children directly under NODE_SET_STATEMENT,
-                // this contradicts the structure you described (single NODE_EXPR child).
-                // This fallback will join them with spaces, which won't produce commas.
-                std::string fallback_str = "";
-                for (const auto* child : node->children) {
-                    std::string child_s = build_str_expr(child);
-                    if (!child_s.empty()) {
-                        if (!fallback_str.empty()) {
-                            fallback_str += " ";
-                        }
-                        fallback_str += child_s;
-                    }
-                }
-                if (!fallback_str.empty()) {
-                    result += " " + fallback_str;
-                }
             }
+            // If no children, it's just "SET", though usually invalid without assignments.
         }
         break;
 
         case NodeType::NODE_VARIABLE_ASSIGNMENT: // Handles individual 'variable = value' assignments
             // Expected children:
-            // child[0]: variable name (e.g., NODE_IDENTIFIER, NODE_SYSTEM_VARIABLE)
-            // child[1]: value (e.g., NODE_STRING_LITERAL, NODE_NUMBER_LITERAL, NODE_IDENTIFIER for keywords like OFF)
+            // child[0]: variable name (e.g., NODE_IDENTIFIER, NODE_SYSTEM_VARIABLE, NODE_USER_VARIABLE)
+            // child[1]: value (e.g., NODE_STRING_LITERAL, NODE_NUMBER_LITERAL, NODE_EXPR)
             if (node->children.size() == 2) {
-                std::string var_name_str = build_str_expr(node->children[0]); // Reconstruct variable name
-                std::string value_str = build_str_expr(node->children[1]);   // Reconstruct value (which is an expression)
-
-                if (!var_name_str.empty()) {
-                    // Standard SET syntax often has no spaces around '=' for variable assignments
-                    result = var_name_str + " = " + value_str;
-                }
-            } else if (node->children.size() == 1) {
-                // This might occur if the parser handles `SET variable` (implying a default or boolean toggle)
-                // or if `variable = DEFAULT` is parsed with DEFAULT not as a separate value node.
-                // For robust reconstruction, the AST should clearly distinguish these.
-                // Assuming for now it's just the variable name, which is incomplete for `var=val`.
-                result = build_str_expr(node->children[0]) + " = "; // Append '=' expecting a value, or adapt if semantics differ
+                std::string var_name_str = build_str_expr(node->children[0]);
+                std::string value_str = build_str_expr(node->children[1]);
+                result = var_name_str + " = " + value_str;
+            } else if (node->children.size() == 1) { // Potentially `SET variable` (e.g. boolean toggle if parser supports)
+                result = build_str_expr(node->children[0]) + " = "; // Incomplete, but reflects AST
             }
-            // The node->value of NODE_VARIABLE_ASSIGNMENT itself is not used for the '=' here;
-            // the structure and type imply the assignment operator.
             break;
 
         case NodeType::NODE_QUALIFIED_IDENTIFIER: // e.g., table.column or schema.table.column
             if (!node->children.empty()) {
-                // Children are the parts of the identifier (e.g., schema, table, column nodes)
                 std::string qualified_name_parts = "";
                 for (size_t i = 0; i < node->children.size(); ++i) {
                     qualified_name_parts += build_str_expr(node->children[i]);
@@ -132,17 +123,15 @@ inline std::string build_str_expr(const AstNode* node) {
             }
             break;
 
-        case NodeType::NODE_SIMPLE_EXPRESSION: // A specific kind of expression
-        // Simplified existing generic NODE_EXPR logic for when it has children
+        // For comma-separated lists like variable assignments in SET, or function arguments if parser uses these node types
+        case NodeType::NODE_SIMPLE_EXPRESSION:
         case NodeType::NODE_SET_OPTION_VALUE_LIST: {
-            // If the NODE_EXPR has children:
             std::string temp_expr_parts = "";
-
-            for (const auto* child_of_expr : node->children) { // These are the NODE_VARIABLE_ASSIGNMENTs
-                std::string part_str = build_str_expr(child_of_expr);
+            for (const auto* child_item : node->children) {
+                std::string part_str = build_str_expr(child_item);
                 if (!part_str.empty()) {
                     if (!temp_expr_parts.empty()) {
-                        temp_expr_parts += ", "; // <<< This space is the current behavior
+                        temp_expr_parts += ", "; // Comma and space separator
                     }
                     temp_expr_parts += part_str;
                 }
@@ -150,42 +139,80 @@ inline std::string build_str_expr(const AstNode* node) {
             result = temp_expr_parts;
             break;
         }
+        
+        case NodeType::NODE_EXPR: // Generic expression, potentially a function call or other complex expression
+            // Check for known patterns within NODE_EXPR, like function calls based on node->value
+            // Example AST for NOW(): Type: EXPR, Value: 'FUNC_CALL:NOW'
+            //                          Child 0: Type: IDENTIFIER, Value: 'NOW'
+            //                          Child 1: Type: EXPR, Value: 'empty_arg_list_wrapper'
+            if (node->value.rfind("FUNC_CALL:", 0) == 0 && // Check if node->value indicates a function call structure
+                node->children.size() >= 1 && node->children[0]->type == NodeType::NODE_IDENTIFIER) {
+                // Handle FUNC_CALL pattern
+                std::string func_name_str = node->children[0]->value; // Function name from IDENTIFIER child
+                std::string args_str = "";
 
-        case NodeType::NODE_COMPARISON_EXPRESSION: // e.g., column = 5, name LIKE '%pattern%'
-            // Expects 3 children: left_operand, operator_node, right_operand
-            if (node->children.size() == 3) {
-                std::string left = build_str_expr(node->children[0]);
-                std::string op = build_str_expr(node->children[1]); // Operator node itself
-                std::string right = build_str_expr(node->children[2]);
-
-                if (!left.empty() && !op.empty() && !right.empty()) {
-                    result = left + " " + op + " " + right;
-                } else { // Fallback for incomplete structures (should ideally not happen with a valid AST)
-                    if (!left.empty()) result += left;
-                    if (!op.empty()) { if (!result.empty()) result += " "; result += op; }
-                    if (!right.empty()) { if (!result.empty()) result += " "; result += right; }
-                }
-            } else { // Fallback if not 3 children, process as a generic expression list
-                std::string temp_expr_parts = "";
-                for (const auto* child : node->children) {
-                    std::string child_expr = build_str_expr(child);
-                    if (!child_expr.empty()) {
-                        if (!temp_expr_parts.empty()) temp_expr_parts += " ";
-                        temp_expr_parts += child_expr;
+                if (node->children.size() > 1) {
+                    const AstNode* args_list_node = node->children[1];
+                    // Check if it's the specific "empty_arg_list_wrapper"
+                    if (args_list_node->type == NodeType::NODE_EXPR && args_list_node->value == "empty_arg_list_wrapper") {
+                        // args_str remains empty, resulting in func_name()
+                    } else {
+                        // Recursively call build_str_expr for the arguments node.
+                        // This relies on the args_list_node's own handler to format correctly
+                        // (e.g., with commas if it's a NODE_SIMPLE_EXPRESSION or NODE_SET_OPTION_VALUE_LIST).
+                        args_str = build_str_expr(args_list_node);
                     }
                 }
-                result = temp_expr_parts;
+                result = func_name_str + "(" + args_str + ")";
+            } else {
+                // Generic handling for other NODE_EXPR types (not matching FUNC_CALL pattern)
+                // This logic is similar to the original 'default' case for expressions.
+                if (!node->value.empty()) { // If the EXPR node itself has a value (e.g., an operator)
+                    result = node->value;
+                }
+
+                if (!node->children.empty()) {
+                    std::string children_expr_str = "";
+                    for (const auto* child : node->children) {
+                        std::string child_str = build_str_expr(child);
+                        if (!child_str.empty()) {
+                            if (!children_expr_str.empty()) {
+                                children_expr_str += " "; // Default to space separation for generic expr children
+                            }
+                            children_expr_str += child_str;
+                        }
+                    }
+                    if (!result.empty() && !children_expr_str.empty()) {
+                        // Avoid double space if result ends with '(' or child starts with ')' or is empty
+                        if (!result.empty() && result.back() != '(' && 
+                            !children_expr_str.empty() && children_expr_str.front() != ')') {
+                             result += " ";
+                        }
+                    }
+                    result += children_expr_str;
+                }
             }
             break;
 
-        case NodeType::NODE_LOGICAL_AND_EXPRESSION: // For multiple expressions joined by AND
-        { // Scope for temp_result
+        case NodeType::NODE_COMPARISON_EXPRESSION: // e.g., column = 5, name LIKE '%pattern%'
+            if (node->children.size() == 3) { // left_operand, operator_node, right_operand
+                std::string left = build_str_expr(node->children[0]);
+                std::string op = build_str_expr(node->children[1]); // Operator node itself (e.g. NODE_OPERATOR with value "=")
+                std::string right = build_str_expr(node->children[2]);
+                result = left + " " + op + " " + right;
+            } else { // Fallback, join children with spaces
+                goto default_children_join_logic;
+            }
+            break;
+
+        case NodeType::NODE_LOGICAL_AND_EXPRESSION:
+        {
             std::string temp_result = "";
             for (size_t i = 0; i < node->children.size(); ++i) {
                 std::string child_expr = build_str_expr(node->children[i]);
                 if (!child_expr.empty()) {
                     if (!temp_result.empty()) {
-                        temp_result += " AND "; // "AND" with spaces
+                        temp_result += " AND ";
                     }
                     temp_result += child_expr;
                 }
@@ -193,67 +220,59 @@ inline std::string build_str_expr(const AstNode* node) {
             result = temp_result;
         }
             break;
-        // Note: Similar logic would apply for NODE_LOGICAL_OR_EXPRESSION if it existed.
-        // If OR/XOR use NODE_EXPR with an operator child, NODE_EXPR handles it.
+        // Note: Similar logic would apply for NODE_LOGICAL_OR_EXPRESSION, NODE_LOGICAL_XOR_EXPRESSION
 
         case NodeType::NODE_IS_NULL_EXPRESSION: // expr IS NULL
-            if (!node->children.empty()) { // Expects one child (the expression)
+            if (!node->children.empty()) {
                 result = build_str_expr(node->children[0]) + " IS NULL";
-            } else if (!node->value.empty()) { // Fallback if value holds the operand (unlikely for this structure)
+            } else if (!node->value.empty()) { // Fallback
                 result = node->value + " IS NULL";
             }
             break;
 
         case NodeType::NODE_IS_NOT_NULL_EXPRESSION: // expr IS NOT NULL
-            if (!node->children.empty()) { // Expects one child
+            if (!node->children.empty()) {
                 result = build_str_expr(node->children[0]) + " IS NOT NULL";
             } else if (!node->value.empty()) { // Fallback
                 result = node->value + " IS NOT NULL";
             }
             break;
 
-        case NodeType::NODE_AGGREGATE_FUNCTION_CALL: {// e.g., COUNT(*), SUM(column), AVG(DISTINCT col)
-            if (node->children.size()) {
-                result += node->value + "(" + build_str_expr(node->children[0]) + ")";
-            } else {
-                result += node->value + "()";
+        case NodeType::NODE_AGGREGATE_FUNCTION_CALL: // e.g., COUNT(*), SUM(column), AVG(DISTINCT col)
+            // node->value is the function name (e.g. "COUNT")
+            // node->children[0] is the argument expression (e.g. "*", "column", "DISTINCT col")
+            if (!node->children.empty()) {
+                result = node->value + "(" + build_str_expr(node->children[0]) + ")";
+            } else { // For functions like COUNT() if parser allows, or if value is "NOW" and it's parsed as AGGREGATE
+                result = node->value + "()";
             }
             break;
-        }
+
         case NodeType::NODE_INTERVAL_EXPRESSION: { // e.g., INTERVAL '1' DAY or INTERVAL expression unit
-            // Assumes node->value might be "INTERVAL" or children provide full structure.
-            // A common structure: "INTERVAL" expr unit
-            result = "INTERVAL"; // The keyword
-            // Child 0: the value expression (e.g., '1', 1+1)
-            // Child 1: the unit (e.g., DAY, HOUR_MINUTE)
-            if (!node->children.empty()) {
+            result = "INTERVAL";
+            if (node->children.size() >= 1) { // Value expression
                  std::string val_expr = build_str_expr(node->children[0]);
                  if (!val_expr.empty()) {
                     result += " " + val_expr;
                  }
-                if (node->children.size() > 1) {
-                    std::string unit_expr = build_str_expr(node->children[1]);
+                if (node->children.size() >= 2) { // Unit
+                    std::string unit_expr = build_str_expr(node->children[1]); // Unit is often an IDENTIFIER or KEYWORD
                     if(!unit_expr.empty()){
                         result += " " + unit_expr;
                     }
                 }
-            } else if (!node->value.empty() && node->value != "INTERVAL") {
-                // If node->value contains something like "1 DAY" and no children
+            } else if (!node->value.empty() && node->value != "INTERVAL") { // Fallback if value contains "1 DAY"
                 result += " " + node->value;
             }
             break;
         }
         case NodeType::NODE_SUBQUERY: { // Represents (SELECT ...) or a parenthesized expression like (a + b)
-            // This node type explicitly adds parentheses around its content.
             result = "(";
             std::string sub_content = "";
-            // Usually, a subquery node has one child: the actual statement or the inner expression.
-            for (size_t i = 0; i < node->children.size(); ++i) {
+            for (size_t i = 0; i < node->children.size(); ++i) { // Usually one child: the statement or inner expression
                 std::string child_expr = build_str_expr(node->children[i]);
                  if (!child_expr.empty()) {
-                    if (!sub_content.empty()) {
-                        // If multiple children form a list inside (), separate them by space.
-                        // This depends on how the parser builds subquery children.
+                    if (!sub_content.empty()) { // If multiple children, join with space (depends on parser structure for subquery children)
                         sub_content += " ";
                     }
                     sub_content += child_expr;
@@ -264,10 +283,10 @@ inline std::string build_str_expr(const AstNode* node) {
             break;
         }
 
-        // Default case for other node types:
-        // Attempt to construct from value and/or children if any.
-        // This is a general fallback; ideally, all expression-relevant types are explicitly handled.
         default: {
+        default_children_join_logic: // Label for goto from incomplete comparison expr, etc.
+            // Default handling: use node's value, then append space-separated children.
+            // This is a general fallback.
             if (!node->value.empty()) {
                 result = node->value;
             }
@@ -277,13 +296,17 @@ inline std::string build_str_expr(const AstNode* node) {
                     std::string child_str = build_str_expr(child);
                     if (!child_str.empty()) {
                         if (!children_expr_str.empty()) {
-                            children_expr_str += " ";
+                            children_expr_str += " "; // Default to space separation
                         }
                         children_expr_str += child_str;
                     }
                 }
                 if (!result.empty() && !children_expr_str.empty()) {
-                    result += " "; // Space if node has a value AND children contribute
+                     // Avoid double space if result ends with '(' or child starts with ')' or is empty
+                    if (!result.empty() && result.back() != '(' && 
+                        !children_expr_str.empty() && children_expr_str.front() != ')') {
+                            result += " ";
+                    }
                 }
                 result += children_expr_str;
             }
