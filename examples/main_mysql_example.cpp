@@ -138,6 +138,13 @@ int main() {
         "ORDER BY total_spent DESC, customer_name ASC "
         "LIMIT 10, 5 "
         "FOR UPDATE OF c, o NOWAIT;"
+
+		// MATCH-AGAINST
+		"SELECT MATCH customer_name,total_orders AGAINST ('foo') FROM customers;"
+		"SELECT MATCH customer_name,total_orders AGAINST ('foo' IN NATURAL LANGUAGE MODE) FROM customers;"
+		"SELECT MATCH customer_name,total_orders AGAINST ('foo' IN NATURAL LANGUAGE MODE WITH QUERY EXPANSION) FROM customers;"
+		"SELECT MATCH customer_name,total_orders AGAINST ('foo' IN BOOLEAN MODE) FROM customers;"
+		"SELECT MATCH customer_name,total_orders AGAINST ('foo' WITH QUERY EXPANSION) FROM customers;"
     };
 
     std::vector<std::string> insert_queries = {

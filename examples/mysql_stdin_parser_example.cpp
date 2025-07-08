@@ -54,11 +54,12 @@ bool is_line_empty(const std::string& s) {
     return std::all_of(s.begin(), s.end(), isspace);
 }
 
+extern int mysql_yydebug;
 
 int main(int argc, char* argv[]) {
+    mysql_yydebug = 1;
     int iterations_count;
     bool verbose_ast_first_iteration;
-
     parse_arguments(argc, argv, iterations_count, verbose_ast_first_iteration);
 
     std::vector<std::string> all_queries;

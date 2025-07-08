@@ -51,7 +51,7 @@ union MYSQL_YYSTYPE;
   "PERSIST_ONLY"        { return TOKEN_PERSIST_ONLY;}
   "DEFAULT"             { return TOKEN_DEFAULT; }
   "COLLATE"             { return TOKEN_COLLATE; }
-  
+
   "SHOW"                { return TOKEN_SHOW; }
   /* FULL is already defined for JOINs, will be reused */
   /* FIELDS is already defined for INTO OUTFILE, will be reused */
@@ -60,7 +60,20 @@ union MYSQL_YYSTYPE;
   "COMMIT"              { return TOKEN_COMMIT; }
   "IS"                  { return TOKEN_IS; }
   "NULL"                { return TOKEN_NULL_KEYWORD; }
+  "TRUE"                { return TOKEN_TRUE; }
+  "FALSE"               { return TOKEN_FALSE; }
+  "UNKNOWN"             { return TOKEN_UNKNOWN; }
+
+  /* Literal SET values (options) */
+  "BINARY"              { return TOKEN_BINARY; }
+  "ROW"                 { return TOKEN_ROW; }
+  "SYSTEM"              { return TOKEN_SYSTEM; }
+
   "NOT"                 { return TOKEN_NOT; }
+  "BETWEEN"             { return TOKEN_BETWEEN; }
+  "MEMBER"              { return TOKEN_MEMBER; }
+  "ESCAPE"              { return TOKEN_ESCAPE; }
+  "REGEXP"              { return TOKEN_REGEXP; }
 
   "OFFSET"              { return TOKEN_OFFSET; }
 
@@ -79,8 +92,18 @@ union MYSQL_YYSTYPE;
   "DISTINCT"            { return TOKEN_DISTINCT; }
   "GROUP"               { return TOKEN_GROUP; }
   "ALL"                 { return TOKEN_ALL; }
+  "ANY"                 { return TOKEN_ANY; }
   "HAVING"              { return TOKEN_HAVING; }
+  "INTERVAL"            { return TOKEN_INTERVAL; }
+
+  /* Boolean Operators */
+  "OR"                  { return TOKEN_OR; }
+  "XOR"                 { return TOKEN_XOR; }
   "AND"                 { return TOKEN_AND; }
+
+  /* Arithmetic Operators */
+  "DIV"                 { return TOKEN_DIV; }
+  "MOD"                 { return TOKEN_MOD; }
 
   /* JOIN related keywords */
   "JOIN"                { return TOKEN_JOIN; }
@@ -92,6 +115,30 @@ union MYSQL_YYSTYPE;
   "CROSS"               { return TOKEN_CROSS; }
   "NATURAL"             { return TOKEN_NATURAL; }
   "ON"                  { return TOKEN_ON; }
+
+  /* Intervals */
+  "DAY_HOUR"            { return TOKEN_DAY_HOUR; }
+  "DAY_MICROSECOND"     { return TOKEN_DAY_MICROSECOND; }
+  "DAY_MINUTE"          { return TOKEN_DAY_MINUTE; }
+  "DAY_SECOND"          { return TOKEN_DAY_SECOND; }
+  "HOUR_MICROSECOND"    { return TOKEN_HOUR_MICROSECOND; }
+  "HOUR_MINUTE"         { return TOKEN_HOUR_MINUTE; }
+  "HOUR_SECOND"         { return TOKEN_HOUR_SECOND; }
+  "MINUTE_MICROSECOND"  { return TOKEN_MINUTE_MICROSECOND; }
+  "MINUTE_SECOND"       { return TOKEN_MINUTE_SECOND; }
+  "SECOND_MICROSECOND"  { return TOKEN_SECOND_MICROSECOND; }
+  "YEAR_MONTH"          { return TOKEN_YEAR_MONTH; }
+
+  /* Timestamps */
+  "DAY"                 { return TOKEN_DAY; }
+  "WEEK"                { return TOKEN_WEEK; }
+  "HOUR"                { return TOKEN_HOUR; }
+  "MINUTE"              { return TOKEN_MINUTE; }
+  "MONTH"               { return TOKEN_MONTH; }
+  "QUARTER"             { return TOKEN_QUARTER; }
+  "SECOND"              { return TOKEN_SECOND; }
+  "MICROSECOND"         { return TOKEN_MICROSECOND; }
+  "YEAR"                { return TOKEN_YEAR; }
 
   /* New keywords for INTO, LOCKING */
   "OUTFILE"             { return TOKEN_OUTFILE; }
@@ -138,14 +185,18 @@ union MYSQL_YYSTYPE;
   "MAX"                 { return TOKEN_MAX; }
   "MIN"                 { return TOKEN_MIN; }
 
+  /* Extra keywords */
+  "SOUNDS"              { return TOKEN_SOUNDS; }
+  "LIKE"                { return TOKEN_LIKE; }
 
   /* Identifiers and Literals */
   "`"                   { yylval_param->str_val = new std::string(); BEGIN(BTIDENT); }
 
-  "@@global."           { return TOKEN_GLOBAL_VAR_PREFIX; }
-  "@@session."          { return TOKEN_SESSION_VAR_PREFIX; }
-  "@@local."            { return TOKEN_SESSION_VAR_PREFIX; } /* local is alias for session */
-  "@@persisted."        { return TOKEN_PERSIST_VAR_PREFIX; } /* MySQL 8 specific */
+  "@@GLOBAL."           { return TOKEN_GLOBAL_VAR_PREFIX; }
+  "@@SESSION."          { return TOKEN_SESSION_VAR_PREFIX; }
+  "@@LOCAL."            { return TOKEN_SESSION_VAR_PREFIX; } /* local is alias for session */
+  "@@PERSIST."          { return TOKEN_PERSIST_VAR_PREFIX; } /* MySQL 8 specific */
+  "@@PERSIST_ONLY."     { return TOKEN_PERSIST_ONLY_VAR_PREFIX; } /* MySQL 8 specific */
   "@@"                  { return TOKEN_DOUBLESPECIAL; } /* For @@varname */
   "@"                   { return TOKEN_SPECIAL; } /* For @uservar */
 
@@ -159,10 +210,15 @@ union MYSQL_YYSTYPE;
   "\""                  { yylval_param->str_val = new std::string("\""); BEGIN(DQSTRING); }
 
   /* Operators and Punctuation */
-  "*"                   { return TOKEN_ASTERISK; } /* For SELECT * and also multiplication */
-  "+"                   { return TOKEN_PLUS; }
-  "-"                   { return TOKEN_MINUS; }
-  "/"                   { return TOKEN_DIVIDE; }
+  "*"                   { return '*'; }
+  "+"                   { return '+'; }
+  "-"                   { return '-'; }
+  "/"                   { return '/'; }
+  "%"                   { return '%'; }
+  "^"                   { return '^'; }
+  "|"                   { return '|'; }
+  "&"                   { return '&'; }
+  "~"                   { return TOKEN_NEG; }
   "("                   { return TOKEN_LPAREN; }
   ")"                   { return TOKEN_RPAREN; }
   ";"                   { return TOKEN_SEMICOLON; }
@@ -176,6 +232,8 @@ union MYSQL_YYSTYPE;
   ">="                  { return TOKEN_GREATER_EQUAL; }
   "!="                  { return TOKEN_NOT_EQUAL; }
   "<>"                  { return TOKEN_NOT_EQUAL; }
+  "<<"                  { return TOKEN_BITWISE_LSHIFT; }
+  ">>"                  { return TOKEN_BITWISE_RSHIFT; }
 
 
   [0-9]+("."[0-9]+)?([eE][+-]?[0-9]+)? { SAVE_TOKEN_STRING; return TOKEN_NUMBER_LITERAL; }
