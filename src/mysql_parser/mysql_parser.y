@@ -938,21 +938,19 @@ table_name_list_for_delete: // List of tables to delete FROM in multi-table dele
 /* --- SET Statement Rules --- */
 // For Query 1: SET TRANSACTION ISOLATION LEVEL ...
 isolation_level_spec:
-    TOKEN_READ TOKEN_COMMITTED         { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "READ COMMITTED"); }
-    | TOKEN_READ TOKEN_UNCOMMITTED     { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "READ UNCOMMITTED"); }
-    | TOKEN_REPEATABLE TOKEN_READ      { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "REPEATABLE READ"); }
-    | TOKEN_SERIALIZABLE              { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "SERIALIZABLE"); }
+    TOKEN_READ TOKEN_COMMITTED         { $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_KEYWORD, "READ COMMITTED"); }
+    | TOKEN_READ TOKEN_UNCOMMITTED     { $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_KEYWORD, "READ UNCOMMITTED"); }
+    | TOKEN_REPEATABLE TOKEN_READ      { $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_KEYWORD, "REPEATABLE READ"); }
+    | TOKEN_SERIALIZABLE              { $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_KEYWORD, "SERIALIZABLE"); }
     ;
 
 transaction_characteristic:
     TOKEN_ISOLATION TOKEN_LEVEL isolation_level_spec {
-        $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_EXPR, "ISOLATION_LEVEL"); // Placeholder type
-        // Consider NODE_TXN_ISOLATION_LEVEL in mysql_ast.h
-        $$->addChild($3); // isolation_level_spec
+        $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_EXPR, "ISOLATION_LEVEL");
+        $$->addChild($3);
     }
-    // Add other characteristics like READ WRITE / READ ONLY if needed
-    // | TOKEN_READ TOKEN_WRITE { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "READ WRITE"); }
-    // | TOKEN_READ TOKEN_ONLY { $$ = new MysqlParser::AstNode(MysqlParser::NodeType::NODE_KEYWORD, "READ ONLY"); } // Assuming TOKEN_ONLY exists
+    | TOKEN_READ TOKEN_WRITE { $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_KEYWORD, "READ WRITE"); }
+    | TOKEN_READ TOKEN_ONLY { $$ = new MySQLParser::AstNode(MySQLParser::NodeType::NODE_KEYWORD, "READ ONLY"); }
     ;
 
 transaction_characteristic_list:
