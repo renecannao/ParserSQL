@@ -8,16 +8,16 @@ bool verbose_print = true;
 unsigned long int queries = 0;
 
 // Function to parse a query and print the AST or errors
-void parse_and_print(MysqlParser::Parser& parser, const std::string& query_type, const std::string& query) {
+void parse_and_print(MySQLParser::Parser& parser, const std::string& query_type, const std::string& query) {
 	queries++;
 	if (verbose_print) {
         std::cout << "------------------------------------------\n";
         std::cout << "Parsing MySQL " << query_type << " query: " << query << std::endl;
 	}
 	//std::cout << "AAA" << std::endl;
-    parser.clearErrors(); // Clear any errors from previous parses
+    parser.clear_errors(); // Clear any errors from previous parses
 	//std::cout << "BBB" << std::endl;
-    std::unique_ptr<MysqlParser::AstNode> ast = parser.parse(query);
+    std::unique_ptr<MySQLParser::AstNode> ast = parser.parse(query);
 	//std::cout << "CCC" << std::endl;
 
 	if (verbose_print == false) {
@@ -25,10 +25,10 @@ void parse_and_print(MysqlParser::Parser& parser, const std::string& query_type,
 	}
     if (ast) {
         std::cout << "Parsing successful!" << std::endl;
-        MysqlParser::print_ast(ast.get()); // Print the AST
+        MySQLParser::print_ast(ast.get()); // Print the AST
     } else {
         std::cout << "Parsing failed." << std::endl;
-        const auto& errors = parser.getErrors();
+        const auto& errors = parser.get_errors();
         if (errors.empty()) {
             std::cout << "  (No specific error messages, check parser logic or mysql_yyerror implementation)" << std::endl;
         } else {
@@ -41,7 +41,7 @@ void parse_and_print(MysqlParser::Parser& parser, const std::string& query_type,
 }
 
 int main() {
-    MysqlParser::Parser parser;
+    MySQLParser::Parser parser;
 
     std::vector<std::string> select_queries = {
         // Basic SELECTs (from original)

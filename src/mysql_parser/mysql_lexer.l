@@ -1,21 +1,37 @@
 %option reentrant noyywrap nounput noinput batch case-insensitive
 %option prefix="mysql_yy"
-%option extra-type="MysqlParser::Parser*"
+%option extra-type="MySQLParser::Parser*"
 
 %{
+
 #define ECHO /* This makes ECHO do nothing */
+
 // C++ code to be included in the generated lexer
-#include "mysql_parser/mysql_parser.h"   // For MysqlParser::Parser, yyscan_t
-#include "mysql_parser/mysql_ast.h"      // For MysqlParser::AstNode, etc.
-#include "mysql_parser.tab.h"           // Bison-generated: token enums, defines union MYSQL_YYSTYPE
+#include "mysql_parser/mysql_parser.h" // For MySQLParser::Parser, yyscan_t
+#include "mysql_parser/mysql_ast.h"    // For MySQLParser::AstNode, etc.
+#include "mysql_parser.tab.h"          // Bison-generated: token enums, defines union MYSQL_YYSTYPE
+
 #include <string>
 #include <vector>
 
 union MYSQL_YYSTYPE;
 #undef YY_DECL
-#define YY_DECL int mysql_yylex (union MYSQL_YYSTYPE *yylval_param, yyscan_t yyscanner, MysqlParser::Parser* parser_context)
+#define YY_DECL int mysql_yylex (union MYSQL_YYSTYPE *yylval_param, MYSQL_YYLTYPE* yylloc, yyscan_t yyscanner, MySQLParser::Parser* parser_context)
 
 #define SAVE_TOKEN_STRING yylval_param->str_val = new std::string(yytext)
+#define YY_USER_ACTION                          \
+    yylloc->first_line = yylloc->last_line;     \
+    yylloc->first_column = yylloc->last_column; \
+                                                \
+    for(int i = 0; yytext[i] != '\0'; i++) {    \
+        if(yytext[i] == '\n') {                 \
+            yylloc->last_line++;                \
+            yylloc->last_column = 0;            \
+        }                                       \
+        else {                                  \
+            yylloc->last_column++;              \
+        }                                       \
+    }
 %}
 
 %x COMMENT
@@ -24,6 +40,7 @@ union MYSQL_YYSTYPE;
 %x BTIDENT
 
 %%
+
  /* Rules for the lexer */
 
 <INITIAL>{
@@ -80,7 +97,7 @@ union MYSQL_YYSTYPE;
   "DELETE"              { return TOKEN_DELETE; }
   "LOW_PRIORITY"        { return TOKEN_LOW_PRIORITY; }
   "QUICK"               { return TOKEN_QUICK; }
-  "IGNORE"              { return TOKEN_IGNORE_SYM; } /* Changed from TOKEN_IGNORE to avoid conflict if IGNORE is a general keyword */
+  "IGNORE"              { return TOKEN_IGNORE_SYM; }
   "USING"               { return TOKEN_USING; }
   "ORDER"               { return TOKEN_ORDER; }
   "BY"                  { return TOKEN_BY; }
@@ -156,6 +173,7 @@ union MYSQL_YYSTYPE;
   "ISOLATION"           { return TOKEN_ISOLATION; }
   "LEVEL"               { return TOKEN_LEVEL; }
   "READ"                { return TOKEN_READ; }
+  "ONLY"                { return TOKEN_ONLY; }
   "WRITE"               { return TOKEN_WRITE; }
   "COMMITTED"           { return TOKEN_COMMITTED; }
   "UNCOMMITTED"         { return TOKEN_UNCOMMITTED; }
@@ -190,7 +208,7 @@ union MYSQL_YYSTYPE;
   "LIKE"                { return TOKEN_LIKE; }
 
   /* Identifiers and Literals */
-  "`"                   { yylval_param->str_val = new std::string(); BEGIN(BTIDENT); }
+  "`"                   { yylval_param->str_val = new std::string("`"); BEGIN(BTIDENT); }
 
   "@@GLOBAL."           { return TOKEN_GLOBAL_VAR_PREFIX; }
   "@@SESSION."          { return TOKEN_SESSION_VAR_PREFIX; }
@@ -261,7 +279,7 @@ union MYSQL_YYSTYPE;
 }
 
 <SQSTRING>{
-  "[^'\\\\]+"           { *(yylval_param->str_val) += yytext; }
+  [^'\\]+               { *(yylval_param->str_val) += yytext; }
   "\\'"                 { *(yylval_param->str_val) += "'"; }
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
   /* Add other standard SQL escape sequences if needed e.g. \n, \t, \b, \r, \0, \Z */
@@ -272,12 +290,17 @@ union MYSQL_YYSTYPE;
   "\\0"                 { *(yylval_param->str_val) += "\0"; }
   "\\Z"                 { *(yylval_param->str_val) += "\x1a"; } /* Ctrl+Z */
   "''"                  { *(yylval_param->str_val) += "'"; } /* SQL standard for literal single quote */
-  "'"                   { *(yylval_param->str_val) += "'"; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
+  "'"                   {
+      *(yylval_param->str_val) += "'";
+      yylloc->first_column -= yylval_param->str_val->size() - 1;
+      BEGIN(INITIAL);
+      return TOKEN_STRING_LITERAL;
+  }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated single-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <DQSTRING>{
-  "[^\"\\\\]+"          { *(yylval_param->str_val) += yytext; }
+  [^"\\]+               { *(yylval_param->str_val) += yytext; }
   "\\\""                { *(yylval_param->str_val) += "\""; }
   "\\\\"                { *(yylval_param->str_val) += "\\"; }
   /* Add other standard SQL escape sequences if needed */
@@ -288,14 +311,24 @@ union MYSQL_YYSTYPE;
   "\\0"                 { *(yylval_param->str_val) += "\0"; }
   "\\Z"                 { *(yylval_param->str_val) += "\x1a"; }
   "\"\""                { *(yylval_param->str_val) += "\""; } /* SQL standard for literal double quote */
-  "\""                  { *(yylval_param->str_val) += "\""; BEGIN(INITIAL); return TOKEN_STRING_LITERAL; }
+  "\""                  {
+      *(yylval_param->str_val) += "\"";
+      yylloc->first_column -= yylval_param->str_val->size() - 1;
+      BEGIN(INITIAL);
+      return TOKEN_STRING_LITERAL;
+  }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated double-quoted string"); BEGIN(INITIAL); return YY_NULL; }
 }
 
 <BTIDENT>{
-  "`"                   { BEGIN(INITIAL); return TOKEN_IDENTIFIER; }
-  "``"                  { *(yylval_param->str_val) += '`'; } /* Escaped backtick inside identifier */
   [^`\n]+               { *(yylval_param->str_val) += yytext; }
+  "``"                  { *(yylval_param->str_val) += '`'; } /* Escaped backtick inside identifier */
+  "`"                   {
+      *(yylval_param->str_val) += "`";
+      yylloc->first_column -= yylval_param->str_val->size() - 1;
+      BEGIN(INITIAL);
+      return TOKEN_IDENTIFIER;
+  }
   \n                    { if(parser_context) parser_context->internal_add_error("Newline in backticked identifier"); BEGIN(INITIAL); /* Error, but return to INITIAL */ }
   <<EOF>>               { if(parser_context) parser_context->internal_add_error("Unterminated backticked identifier"); BEGIN(INITIAL); return YY_NULL; }
 }

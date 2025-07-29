@@ -6,7 +6,7 @@
 #include <iostream>
 #include <algorithm> // For std::move if not implicitly included by <string> or <vector>
 
-namespace MysqlParser {
+namespace MySQLParser {
 
 // Enum for Abstract Syntax Tree Node Types
 enum class NodeType {
@@ -120,6 +120,8 @@ struct AstNode {
     NodeType type;
     std::string value; // Stores identifier name, literal value, operator type, etc.
     std::vector<AstNode*> children;
+	size_t val_init_pos { 0 };
+	size_t val_end_pos { 0 };
 
     // Constructor
     AstNode(NodeType t, const std::string& val = "") : type(t), value(val) {}
@@ -148,101 +150,103 @@ struct AstNode {
     }
 };
 
+inline std::string to_string(NodeType t) {
+	if (t == NodeType::NODE_UNKNOWN) { return "UNKNOWN"; }
+	else if (t == NodeType::NODE_COMMAND) { return "COMMAND"; }
+	else if (t == NodeType::NODE_SELECT_STATEMENT) { return "SELECT_STMT"; }
+	else if (t == NodeType::NODE_INSERT_STATEMENT) { return "INSERT_STMT"; }
+	else if (t == NodeType::NODE_DELETE_STATEMENT) { return "DELETE_STMT"; }
+	else if (t == NodeType::NODE_IDENTIFIER) { return "IDENTIFIER"; }
+	else if (t == NodeType::NODE_STRING_LITERAL) { return "STRING_LITERAL"; }
+	else if (t == NodeType::NODE_NUMBER_LITERAL) { return "NUMBER_LITERAL"; }
+	else if (t == NodeType::NODE_BOOLEAN_LITERAL) { return "BOOLEAN_LITERAL"; }
+	else if (t == NodeType::NODE_NULL_LITERAL) { return "NULL_LITERAL"; }
+	else if (t == NodeType::NODE_VALUE_LITERAL) { return "VALUE_LITERAL"; }
+	else if (t == NodeType::NODE_TIMESTAMP) { return "TIMESTAMP"; }
+	else if (t == NodeType::NODE_INTERVAL) { return "INTERVAL"; }
+	else if (t == NodeType::NODE_ASTERISK) { return "ASTERISK"; }
+	else if (t == NodeType::NODE_SET_STATEMENT) { return "SET_STATEMENT"; }
+	else if (t == NodeType::NODE_VARIABLE_ASSIGNMENT) { return "VAR_ASSIGN"; }
+	else if (t == NodeType::NODE_SET_OPTION_VALUE_LIST) { return "SET_OPTION_VALUE_LIST"; }
+	else if (t == NodeType::NODE_USER_VARIABLE) { return "USER_VAR"; }
+	else if (t == NodeType::NODE_SYSTEM_VARIABLE) { return "SYSTEM_VAR"; }
+	else if (t == NodeType::NODE_VARIABLE_SCOPE) { return "VAR_SCOPE"; }
+	else if (t == NodeType::NODE_EXPR) { return "EXPR"; }
+	else if (t == NodeType::NODE_SIMPLE_EXPRESSION) { return "SIMPLE_EXPRESSION"; }
+	else if (t == NodeType::NODE_INTERVAL_EXPRESSION) { return "INTERVAL_EXPRESSION"; }
+	else if (t == NodeType::NODE_AGGREGATE_FUNCTION_CALL) { return "AGGREGATE_FUNC_CALL"; }
+	else if (t == NodeType::NODE_SET_NAMES) { return "SET_NAMES"; }
+	else if (t == NodeType::NODE_SET_CHARSET) { return "SET_CHARSET"; }
+	else if (t == NodeType::NODE_DELETE_OPTIONS) { return "DELETE_OPTIONS"; }
+	else if (t == NodeType::NODE_TABLE_NAME_LIST) { return "TABLE_NAME_LIST"; }
+	else if (t == NodeType::NODE_FROM_CLAUSE) { return "FROM_CLAUSE"; }
+	else if (t == NodeType::NODE_USING_CLAUSE) { return "USING_CLAUSE"; }
+	else if (t == NodeType::NODE_WHERE_CLAUSE) { return "WHERE_CLAUSE"; }
+	else if (t == NodeType::NODE_HAVING_CLAUSE) { return "HAVING_CLAUSE"; }
+	else if (t == NodeType::NODE_ORDER_BY_CLAUSE) { return "ORDER_BY_CLAUSE"; }
+	else if (t == NodeType::NODE_ORDER_BY_ITEM) { return "ORDER_BY_ITEM"; }
+	else if (t == NodeType::NODE_LIMIT_CLAUSE) { return "LIMIT_CLAUSE"; }
+	else if (t == NodeType::NODE_ESCAPE_CLAUSE) { return "ESCAPE_CLAUSE"; }
+	else if (t == NodeType::NODE_COMPARISON_EXPRESSION) { return "COMPARISON_EXPR"; }
+	else if (t == NodeType::NODE_LOGICAL_AND_EXPRESSION) { return "LOGICAL_AND_EXPR"; }
+	else if (t == NodeType::NODE_OPERATOR) { return "OPERATOR"; }
+	else if (t == NodeType::NODE_QUALIFIED_IDENTIFIER) { return "QUALIFIED_IDENTIFIER"; }
+	else if (t == NodeType::NODE_SELECT_OPTIONS) { return "SELECT_OPTIONS"; }
+	else if (t == NodeType::NODE_SELECT_ITEM_LIST) { return "SELECT_ITEM_LIST"; }
+	else if (t == NodeType::NODE_SELECT_ITEM) { return "SELECT_ITEM"; }
+	else if (t == NodeType::NODE_SELECT_RAW_SUBQUERY) { return "NODE_SELECT_RAW_SUBQUERY"; }
+	else if (t == NodeType::NODE_ALIAS) { return "ALIAS"; }
+	else if (t == NodeType::NODE_TABLE_REFERENCE) { return "TABLE_REFERENCE"; }
+	else if (t == NodeType::NODE_GROUP_BY_CLAUSE) { return "GROUP_BY_CLAUSE"; }
+	else if (t == NodeType::NODE_GROUPING_ELEMENT) { return "GROUPING_ELEMENT"; }
+	else if (t == NodeType::NODE_JOIN_CLAUSE) { return "JOIN_CLAUSE"; }
+	else if (t == NodeType::NODE_JOIN_TYPE_NATURAL_SPEC) { return "JOIN_TYPE_NATURAL_SPEC"; }
+	else if (t == NodeType::NODE_JOIN_CONDITION_ON) { return "JOIN_CONDITION_ON"; }
+	else if (t == NodeType::NODE_JOIN_CONDITION_USING) { return "JOIN_CONDITION_USING"; }
+	else if (t == NodeType::NODE_COLUMN_LIST) { return "COLUMN_LIST"; }
+	else if (t == NodeType::NODE_INTO_CLAUSE) { return "INTO_CLAUSE"; }
+	else if (t == NodeType::NODE_INTO_VAR_LIST) { return "INTO_VAR_LIST"; }
+	else if (t == NodeType::NODE_INTO_OUTFILE) { return "INTO_OUTFILE"; }
+	else if (t == NodeType::NODE_INTO_DUMPFILE) { return "INTO_DUMPFILE"; }
+	else if (t == NodeType::NODE_LOCKING_CLAUSE_LIST) { return "LOCKING_CLAUSE_LIST"; }
+	else if (t == NodeType::NODE_LOCKING_CLAUSE) { return "LOCKING_CLAUSE"; }
+	else if (t == NodeType::NODE_LOCK_STRENGTH) { return "LOCK_STRENGTH"; }
+	else if (t == NodeType::NODE_LOCK_TABLE_LIST) { return "LOCK_TABLE_LIST"; }
+	else if (t == NodeType::NODE_LOCK_OPTION) { return "LOCK_OPTION"; }
+	else if (t == NodeType::NODE_DERIVED_TABLE) { return "DERIVED_TABLE"; }
+	else if (t == NodeType::NODE_SUBQUERY) { return "SUBQUERY"; }
+	else if (t == NodeType::NODE_FILE_OPTIONS) { return "FILE_OPTIONS"; }
+	else if (t == NodeType::NODE_FIELDS_OPTIONS_CLAUSE) { return "FIELDS_OPTIONS_CLAUSE"; }
+	else if (t == NodeType::NODE_LINES_OPTIONS_CLAUSE) { return "LINES_OPTIONS_CLAUSE"; }
+	else if (t == NodeType::NODE_FIELDS_TERMINATED_BY) { return "FIELDS_TERMINATED_BY"; }
+	else if (t == NodeType::NODE_FIELDS_ENCLOSED_BY) { return "FIELDS_ENCLOSED_BY"; }
+	else if (t == NodeType::NODE_FIELDS_OPTIONALLY_ENCLOSED_BY) { return "FIELDS_OPTIONALLY_ENCLOSED_BY"; }
+	else if (t == NodeType::NODE_FIELDS_ESCAPED_BY) { return "FIELDS_ESCAPED_BY"; }
+	else if (t == NodeType::NODE_LINES_STARTING_BY) { return "LINES_STARTING_BY"; }
+	else if (t == NodeType::NODE_LINES_TERMINATED_BY) { return "LINES_TERMINATED_BY"; }
+	else if (t == NodeType::NODE_CHARSET_OPTION) { return "CHARSET_OPTION"; }
+	else if (t == NodeType::NODE_KEYWORD) { return "KEYWORD"; }
+	else if (t == NodeType::NODE_SHOW_STATEMENT) { return "SHOW_STMT"; }
+	else if (t == NodeType::NODE_BEGIN_STATEMENT) { return "BEGIN_STMT"; }
+	else if (t == NodeType::NODE_COMMIT_STATEMENT) { return "COMMIT_STMT"; }
+	else if (t == NodeType::NODE_SHOW_OPTION_FULL) { return "SHOW_OPT_FULL"; }
+	else if (t == NodeType::NODE_SHOW_OPTION_FIELDS) { return "SHOW_OPT_FIELDS"; }
+	else if (t == NodeType::NODE_SHOW_TARGET_DATABASES) { return "SHOW_TARGET_DB"; }
+	else if (t == NodeType::NODE_TABLE_SPECIFICATION) { return "TABLE_SPEC"; }
+	else if (t == NodeType::NODE_IS_NULL_EXPRESSION) { return "IS_NULL_EXPR"; }
+	else if (t == NodeType::NODE_IS_NOT_NULL_EXPRESSION) { return "IS_NOT_NULL_EXPR"; }
+	else {
+		return "UNHANDLED_TYPE(" + std::to_string(static_cast<int>(t)) + ")";
+	}
+}
+
 // Helper function to print the AST (for debugging)
 inline void print_ast(const AstNode* node, int indent) {
     if (!node) return;
 
     for (int i = 0; i < indent; ++i) std::cout << "  ";
 
-    std::string type_str;
-    switch(node->type) {
-        case NodeType::NODE_UNKNOWN: type_str = "UNKNOWN"; break;
-        case NodeType::NODE_COMMAND: type_str = "COMMAND"; break;
-        case NodeType::NODE_SELECT_STATEMENT: type_str = "SELECT_STMT"; break;
-        case NodeType::NODE_INSERT_STATEMENT: type_str = "INSERT_STMT"; break;
-        case NodeType::NODE_DELETE_STATEMENT: type_str = "DELETE_STMT"; break;
-        case NodeType::NODE_IDENTIFIER: type_str = "IDENTIFIER"; break;
-        case NodeType::NODE_STRING_LITERAL: type_str = "STRING_LITERAL"; break;
-        case NodeType::NODE_NUMBER_LITERAL: type_str = "NUMBER_LITERAL"; break;
-        case NodeType::NODE_BOOLEAN_LITERAL: type_str = "BOOLEAN_LITERAL"; break;
-        case NodeType::NODE_NULL_LITERAL: type_str = "NULL_LITERAL"; break;
-        case NodeType::NODE_VALUE_LITERAL: type_str = "VALUE_LITERAL"; break;
-        case NodeType::NODE_TIMESTAMP: type_str = "TIMESTAMP"; break;
-        case NodeType::NODE_INTERVAL: type_str = "INTERVAL"; break;
-        case NodeType::NODE_ASTERISK: type_str = "ASTERISK"; break;
-        case NodeType::NODE_SET_STATEMENT: type_str = "SET_STATEMENT"; break;
-        case NodeType::NODE_VARIABLE_ASSIGNMENT: type_str = "VAR_ASSIGN"; break;
-        case NodeType::NODE_SET_OPTION_VALUE_LIST: type_str = "SET_OPTION_VALUE_LIST"; break;
-        case NodeType::NODE_USER_VARIABLE: type_str = "USER_VAR"; break;
-        case NodeType::NODE_SYSTEM_VARIABLE: type_str = "SYSTEM_VAR"; break;
-        case NodeType::NODE_VARIABLE_SCOPE: type_str = "VAR_SCOPE"; break;
-        case NodeType::NODE_EXPR: type_str = "EXPR"; break;
-        case NodeType::NODE_SIMPLE_EXPRESSION: type_str = "SIMPLE_EXPRESSION"; break;
-        case NodeType::NODE_INTERVAL_EXPRESSION: type_str = "INTERVAL_EXPRESSION"; break;
-        case NodeType::NODE_AGGREGATE_FUNCTION_CALL: type_str = "AGGREGATE_FUNC_CALL"; break;
-        case NodeType::NODE_SET_NAMES: type_str = "SET_NAMES"; break;
-        case NodeType::NODE_SET_CHARSET: type_str = "SET_CHARSET"; break;
-        case NodeType::NODE_DELETE_OPTIONS: type_str = "DELETE_OPTIONS"; break;
-        case NodeType::NODE_TABLE_NAME_LIST: type_str = "TABLE_NAME_LIST"; break;
-        case NodeType::NODE_FROM_CLAUSE: type_str = "FROM_CLAUSE"; break;
-        case NodeType::NODE_USING_CLAUSE: type_str = "USING_CLAUSE"; break;
-        case NodeType::NODE_WHERE_CLAUSE: type_str = "WHERE_CLAUSE"; break;
-        case NodeType::NODE_HAVING_CLAUSE: type_str = "HAVING_CLAUSE"; break;
-        case NodeType::NODE_ORDER_BY_CLAUSE: type_str = "ORDER_BY_CLAUSE"; break;
-        case NodeType::NODE_ORDER_BY_ITEM: type_str = "ORDER_BY_ITEM"; break;
-        case NodeType::NODE_LIMIT_CLAUSE: type_str = "LIMIT_CLAUSE"; break;
-        case NodeType::NODE_ESCAPE_CLAUSE: type_str = "ESCAPE_CLAUSE"; break;
-        case NodeType::NODE_COMPARISON_EXPRESSION: type_str = "COMPARISON_EXPR"; break;
-        case NodeType::NODE_LOGICAL_AND_EXPRESSION: type_str = "LOGICAL_AND_EXPR"; break;
-        case NodeType::NODE_OPERATOR: type_str = "OPERATOR"; break;
-        case NodeType::NODE_QUALIFIED_IDENTIFIER: type_str = "QUALIFIED_IDENTIFIER"; break;
-        case NodeType::NODE_SELECT_OPTIONS: type_str = "SELECT_OPTIONS"; break;
-        case NodeType::NODE_SELECT_ITEM_LIST: type_str = "SELECT_ITEM_LIST"; break;
-        case NodeType::NODE_SELECT_ITEM: type_str = "SELECT_ITEM"; break;
-        case NodeType::NODE_SELECT_RAW_SUBQUERY: type_str = "NODE_SELECT_RAW_SUBQUERY:"; break;
-        case NodeType::NODE_ALIAS: type_str = "ALIAS"; break;
-        case NodeType::NODE_TABLE_REFERENCE: type_str = "TABLE_REFERENCE"; break;
-        case NodeType::NODE_GROUP_BY_CLAUSE: type_str = "GROUP_BY_CLAUSE"; break;
-        case NodeType::NODE_GROUPING_ELEMENT: type_str = "GROUPING_ELEMENT"; break;
-        case NodeType::NODE_JOIN_CLAUSE: type_str = "JOIN_CLAUSE"; break;
-        case NodeType::NODE_JOIN_TYPE_NATURAL_SPEC: type_str = "JOIN_TYPE_NATURAL_SPEC"; break;
-        case NodeType::NODE_JOIN_CONDITION_ON: type_str = "JOIN_CONDITION_ON"; break;
-        case NodeType::NODE_JOIN_CONDITION_USING: type_str = "JOIN_CONDITION_USING"; break;
-        case NodeType::NODE_COLUMN_LIST: type_str = "COLUMN_LIST"; break;
-        case NodeType::NODE_INTO_CLAUSE: type_str = "INTO_CLAUSE"; break;
-        case NodeType::NODE_INTO_VAR_LIST: type_str = "INTO_VAR_LIST"; break;
-        case NodeType::NODE_INTO_OUTFILE: type_str = "INTO_OUTFILE"; break;
-        case NodeType::NODE_INTO_DUMPFILE: type_str = "INTO_DUMPFILE"; break;
-        case NodeType::NODE_LOCKING_CLAUSE_LIST: type_str = "LOCKING_CLAUSE_LIST"; break;
-        case NodeType::NODE_LOCKING_CLAUSE: type_str = "LOCKING_CLAUSE"; break;
-        case NodeType::NODE_LOCK_STRENGTH: type_str = "LOCK_STRENGTH"; break;
-        case NodeType::NODE_LOCK_TABLE_LIST: type_str = "LOCK_TABLE_LIST"; break;
-        case NodeType::NODE_LOCK_OPTION: type_str = "LOCK_OPTION"; break;
-        case NodeType::NODE_DERIVED_TABLE: type_str = "DERIVED_TABLE"; break;
-        case NodeType::NODE_SUBQUERY: type_str = "SUBQUERY"; break;
-        case NodeType::NODE_FILE_OPTIONS: type_str = "FILE_OPTIONS"; break;
-        case NodeType::NODE_FIELDS_OPTIONS_CLAUSE: type_str = "FIELDS_OPTIONS_CLAUSE"; break;
-        case NodeType::NODE_LINES_OPTIONS_CLAUSE: type_str = "LINES_OPTIONS_CLAUSE"; break;
-        case NodeType::NODE_FIELDS_TERMINATED_BY: type_str = "FIELDS_TERMINATED_BY"; break;
-        case NodeType::NODE_FIELDS_ENCLOSED_BY: type_str = "FIELDS_ENCLOSED_BY"; break;
-        case NodeType::NODE_FIELDS_OPTIONALLY_ENCLOSED_BY: type_str = "FIELDS_OPTIONALLY_ENCLOSED_BY"; break;
-        case NodeType::NODE_FIELDS_ESCAPED_BY: type_str = "FIELDS_ESCAPED_BY"; break;
-        case NodeType::NODE_LINES_STARTING_BY: type_str = "LINES_STARTING_BY"; break;
-        case NodeType::NODE_LINES_TERMINATED_BY: type_str = "LINES_TERMINATED_BY"; break;
-        case NodeType::NODE_CHARSET_OPTION: type_str = "CHARSET_OPTION"; break;
-        case NodeType::NODE_KEYWORD: type_str = "KEYWORD"; break;
-        case NodeType::NODE_SHOW_STATEMENT: type_str = "SHOW_STMT"; break;
-        case NodeType::NODE_BEGIN_STATEMENT: type_str = "BEGIN_STMT"; break;
-        case NodeType::NODE_COMMIT_STATEMENT: type_str = "COMMIT_STMT"; break;
-        case NodeType::NODE_SHOW_OPTION_FULL: type_str = "SHOW_OPT_FULL"; break;
-        case NodeType::NODE_SHOW_OPTION_FIELDS: type_str = "SHOW_OPT_FIELDS"; break;
-        case NodeType::NODE_SHOW_TARGET_DATABASES: type_str = "SHOW_TARGET_DB"; break;
-        case NodeType::NODE_TABLE_SPECIFICATION: type_str = "TABLE_SPEC"; break;
-        case NodeType::NODE_IS_NULL_EXPRESSION: type_str = "IS_NULL_EXPR"; break;
-        case NodeType::NODE_IS_NOT_NULL_EXPRESSION: type_str = "IS_NOT_NULL_EXPR"; break;
-        default: type_str = "UNHANDLED_TYPE(" + std::to_string(static_cast<int>(node->type)) + ")"; break;
-    }
-    std::cout << "Type: " << type_str;
+    std::cout << "Type: " << to_string(node->type);
     if (!node->value.empty()) {
         std::cout << ", Value: '" << node->value << "'";
     }
@@ -253,7 +257,7 @@ inline void print_ast(const AstNode* node, int indent) {
     }
 }
 
-} // namespace MysqlParser
+} // namespace MySQLParser
 
 #endif // MYSQL_PARSER_AST_H
 

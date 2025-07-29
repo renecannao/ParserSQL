@@ -7,7 +7,7 @@ typedef struct yy_buffer_state *YY_BUFFER_STATE;
 
 // Flex utility functions are now from C++ compiled mysql_lexer.yy.c
 // No extern "C" needed for these declarations as their definitions will also have C++ linkage.
-extern int mysql_yylex_init_extra(MysqlParser::Parser* user_defined, yyscan_t* yyscanner_r);
+extern int mysql_yylex_init_extra(MySQLParser::Parser* user_defined, yyscan_t* yyscanner_r);
 extern int mysql_yylex_destroy(yyscan_t yyscanner); 
 extern YY_BUFFER_STATE mysql_yy_scan_string(const char *yy_str, yyscan_t yyscanner);
 extern void mysql_yy_delete_buffer(YY_BUFFER_STATE b, yyscan_t yyscanner);
@@ -15,20 +15,20 @@ extern void mysql_yy_delete_buffer(YY_BUFFER_STATE b, yyscan_t yyscanner);
 // Bison-generated parser function (now compiled as C++, so C++ linkage)
 // The api.prefix makes it mysql_yyparse.
 // The %parse-param defines its arguments.
-extern int mysql_yyparse(yyscan_t yyscanner, MysqlParser::Parser* parser_context);
+extern int mysql_yyparse(yyscan_t yyscanner, MySQLParser::Parser* parser_context);
 
 // mysql_yyerror is called by mysql_yyparse.
 // Since mysql_yyparse is C++, mysql_yyerror can also be regular C++.
 // Its declaration is in mysql_parser.h (should also not be extern "C" there).
 // The definition is at the bottom of this file.
-void mysql_yyerror(yyscan_t yyscanner, MysqlParser::Parser* parser_context, const char* msg);
+void mysql_yyerror(yyscan_t yyscanner, MySQLParser::Parser* parser_context, const char* msg);
+void mysql_yyerror(MYSQL_YYLTYPE* yyloc, yyscan_t yyscanner, MySQLParser::Parser* parser_context, const char* msg);
 
-
-namespace MysqlParser {
+namespace MySQLParser {
 
 Parser::Parser() : ast_root_(nullptr), scanner_state_(nullptr) {
     if (mysql_yylex_init_extra(this, &scanner_state_)) {
-        throw std::runtime_error("MysqlParser: Failed to initialize Flex scanner.");
+        throw std::runtime_error("MySQLParser: Failed to initialize Flex scanner.");
     }
 }
 
@@ -38,26 +38,26 @@ Parser::~Parser() {
     }
 }
 
-void Parser::clearErrors() {
+void Parser::clear_errors() {
     errors_.clear();
 }
 
-const std::vector<std::string>& Parser::getErrors() const {
+const std::vector<std::string>& Parser::get_errors() const {
     return errors_;
 }
 
 std::unique_ptr<AstNode> Parser::parse(const std::string& sql_query) {
-    clearErrors();
+    clear_errors();
     ast_root_.reset(); 
 
     if (!scanner_state_) {
-        errors_.push_back("MysqlParser: Scanner not initialized.");
+        errors_.push_back("MySQLParser: Scanner not initialized.");
         return nullptr;
     }
 
     YY_BUFFER_STATE buffer_state = mysql_yy_scan_string(sql_query.c_str(), scanner_state_);
     if (!buffer_state) {
-        errors_.push_back("MysqlParser: Error setting up scanner buffer for query.");
+        errors_.push_back("MySQLParser: Error setting up scanner buffer for query.");
         return nullptr;
     }
 
@@ -84,18 +84,25 @@ void Parser::internal_add_error_at(const std::string& msg, int line, int column)
     errors_.push_back("Line " + std::to_string(line) + ", Col " + std::to_string(column) + ": " + msg);
 }
 
-} // namespace MysqlParser
+} // namespace MySQLParser
 
 
 // This function is called by Bison-generated code (mysql_yyparse).
 // Since mysql_yyparse is now compiled as C++, this can be a regular C++ function.
 // The name must match what Bison expects (mysql_yyerror).
 // Its declaration is in mysql_parser.h and should also not be extern "C".
-void mysql_yyerror(yyscan_t yyscanner, MysqlParser::Parser* parser_context, const char* msg) {
+void mysql_yyerror(yyscan_t yyscanner, MySQLParser::Parser* parser_context, const char* msg) {
     if (parser_context) {
         parser_context->internal_add_error(msg);
     } else {
-        fprintf(stderr, "MysqlParser Error (yyerror - no context): %s\n", msg);
+        fprintf(stderr, "MySQLParser Error (yyerror - no context): %s\n", msg);
     }
 }
 
+void mysql_yyerror(MYSQL_YYLTYPE*, yyscan_t yyscanner, MySQLParser::Parser* parser_context, const char* msg) {
+    if (parser_context) {
+        parser_context->internal_add_error(msg);
+    } else {
+        fprintf(stderr, "MySQLParser Error (yyerror - no context): %s\n", msg);
+    }
+}

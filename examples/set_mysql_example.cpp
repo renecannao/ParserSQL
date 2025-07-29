@@ -7,7 +7,7 @@
 #include <string.h>
 #include <nlohmann/json.hpp>
 
-namespace MysqlParser {
+namespace MySQLParser {
 
 /**
  * @brief Reconstructs an expression string from an AST node.
@@ -393,7 +393,7 @@ std::vector<std::string> exp_failures {
 };
 
 int main() {
-    MysqlParser::Parser parser; // Using the MysqlParser namespace
+    MySQLParser::Parser parser; // Using the MysqlParser namespace
 
     std::vector<std::string> set_queries = {
         // Basic User Variable Assignments
@@ -466,16 +466,17 @@ int main() {
         std::cout << "------------------------------------------\n";
         std::cout << "Parsing MySQL SET query: " << query << std::endl;
 
-        parser.clearErrors();
-        std::unique_ptr<MysqlParser::AstNode> ast = parser.parse(query);
+        parser.clear_errors();
+        std::unique_ptr<MySQLParser::AstNode> ast = parser.parse(query);
 
         if (ast) {
             std::cout << "Parsing successful!" << std::endl;
-            MysqlParser::print_ast(ast.get());
+            MySQLParser::print_ast(ast.get());
             std::cout << "QueryFromAST - " << build_str_expr(ast.get()) << "\n";
         } else {
             std::cout << "Parsing failed." << std::endl;
-            const auto& errors = parser.getErrors();
+            const auto& errors = parser.get_errors();
+
             if (errors.empty()) {
                 std::cout << "  (No specific error messages, check parser logic or mysql_yyerror)" << std::endl;
             } else {
