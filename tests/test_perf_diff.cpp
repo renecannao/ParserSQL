@@ -118,8 +118,6 @@ enum class regex_type {
 	REGEX_MATCH_3
 };
 
-// #define NO_PARSE_MEASUREMENT 0
-
 pair<vector<regex_type>,uint64_t> get_regex_bis_matches(const vector<string>& queries) {
 	MySQLParser::Parser parser;
 
@@ -268,12 +266,12 @@ void cmp_parse_perf(const vector<string>& tests_queries) {
 	double bis_avg { std::reduce(bis_durs.begin(), bis_durs.end()) / double(bis_durs.size()) };
 	double re2_avg { std::reduce(re2_durs.begin(), re2_durs.end()) / double(re2_durs.size()) };
 
-	std::cout << "QueryCount:   " << tests_queries.size() << "\n";
-	std::cout << "BISON(ns):    " << bis_avg << "\n";
-	std::cout << "RE2(ns):      " << re2_avg << "\n";
-	std::cout << "RATIO(RE2/B): " << double(re2_avg) / bis_avg  << "\n";
-	std::cout << "BISON(ns/gq):  " << bis_avg / tests_queries.size() << "\n";
-	std::cout << "RE2(ns/gq):    " << re2_avg / tests_queries.size() << "\n";
+	std::cout << "QueryCount:    " << tests_queries.size() << "\n";
+	std::cout << "BISON(ns):     " << bis_avg << "\n";
+	std::cout << "RE2(ns):       " << re2_avg << "\n";
+	std::cout << "RATIO(RE2/B):  " << double(re2_avg) / bis_avg  << "\n";
+	std::cout << "BISON(ns/q):   " << bis_avg / tests_queries.size() << "\n";
+	std::cout << "RE2(ns/q):     " << re2_avg / tests_queries.size() << "\n";
 }
 
 void cmp_match_perf(const vector<string>& tests_queries) {
@@ -309,12 +307,12 @@ void cmp_match_perf(const vector<string>& tests_queries) {
 	double bis_avg { std::reduce(bis_durs.begin(), bis_durs.end()) / double(bis_durs.size()) };
 	double re2_avg { std::reduce(re2_durs.begin(), re2_durs.end()) / double(re2_durs.size()) };
 
-	std::cout << "QueryCount:   " << tests_queries.size() << "\n";
-	std::cout << "BISON(ns):    " << bis_avg << "\n";
-	std::cout << "RE2(ns):      " << re2_avg << "\n";
-	std::cout << "RATIO(RE2/B): " << double(re2_avg) / bis_avg  << "\n";
-	std::cout << "BISON(ns/gq):  " << bis_avg / tests_queries.size() << "\n";
-	std::cout << "RE2(ns/gq):    " << re2_avg / tests_queries.size() << "\n";
+	std::cout << "QueryCount:    " << tests_queries.size() << "\n";
+	std::cout << "BISON(ns):     " << bis_avg << "\n";
+	std::cout << "RE2(ns):       " << re2_avg << "\n";
+	std::cout << "RATIO(RE2/B):  " << double(re2_avg) / bis_avg  << "\n";
+	std::cout << "BISON(ns/q):   " << bis_avg / tests_queries.size() << "\n";
+	std::cout << "RE2(ns/q):     " << re2_avg / tests_queries.size() << "\n";
 }
 
 int main(int argc, char** argv) {
