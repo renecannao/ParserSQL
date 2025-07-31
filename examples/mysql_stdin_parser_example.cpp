@@ -54,11 +54,12 @@ bool is_line_empty(const std::string& s) {
     return std::all_of(s.begin(), s.end(), isspace);
 }
 
+extern int mysql_yydebug;
 
 int main(int argc, char* argv[]) {
+    mysql_yydebug = 1;
     int iterations_count;
     bool verbose_ast_first_iteration;
-
     parse_arguments(argc, argv, iterations_count, verbose_ast_first_iteration);
 
     std::vector<std::string> all_queries;
@@ -118,7 +119,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << all_queries.size() << " query/queries read from input. Starting parsing iterations." << std::endl;
 
-    MysqlParser::Parser parser;
+    MySQLParser::Parser parser;
     long long successful_parses = 0;
     long long failed_parses = 0;
 
@@ -135,8 +136,8 @@ int main(int argc, char* argv[]) {
             //     std::cout << "Parsing query: [" << query_to_parse << "]" << std::endl;
             // }
 
-            parser.clearErrors();
-            std::unique_ptr<MysqlParser::AstNode> ast = parser.parse(query_to_parse);
+            parser.clear_errors();
+            std::unique_ptr<MySQLParser::AstNode> ast = parser.parse(query_to_parse);
 
             if (ast) {
                 successful_parses++;
@@ -144,7 +145,7 @@ int main(int argc, char* argv[]) {
                     std::cout << "------------------------------------------\n";
                     std::cout << "Query: " << query_to_parse << std::endl;
                     std::cout << "Parsing successful! AST:" << std::endl;
-                    MysqlParser::print_ast(ast.get());
+                    MySQLParser::print_ast(ast.get());
                     std::cout << "------------------------------------------\n\n";
                 }
             } else {
@@ -153,7 +154,7 @@ int main(int argc, char* argv[]) {
                     std::cout << "------------------------------------------\n";
                     std::cout << "Query: " << query_to_parse << std::endl;
                     std::cout << "Parsing failed." << std::endl;
-                    const auto& errors = parser.getErrors();
+                    const auto& errors = parser.get_errors();
                     if (errors.empty()) {
                         std::cout << "  (No specific error messages)" << std::endl;
                     } else {
