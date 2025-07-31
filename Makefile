@@ -2,7 +2,7 @@
 CXX = g++
 LINKER = g++
 
-CXXFLAGS = -std=c++17 -Wall -g -O2 -DYYDEBUG=1
+CXXFLAGS = -std=c++17 -Wall -ggdb -O2 -DYYDEBUG=1 -fno-omit-frame-pointer
 CPPFLAGS = -I$(PROJECT_ROOT)/include
 
 PROJECT_ROOT = .
@@ -40,6 +40,7 @@ MYSQL_SET_EXAMPLE_EXE = $(PROJECT_ROOT)/set_mysql_example
 MYSQL_STDIN_EXAMPLE_EXE = $(PROJECT_ROOT)/mysql_stdin_parser_example
 
 TEST_REGEXES_PARITY = $(PROJECT_ROOT)/tests/test_regexes_parity
+TEST_PERF_DIFF = $(PROJECT_ROOT)/tests/test_perf_diff
 
 MYSQL_BISON_C_FILE = mysql_parser.tab.c
 MYSQL_BISON_H_FILE = mysql_parser.tab.h
@@ -179,7 +180,7 @@ pgsql: $(PGSQL_TARGET_LIB)
 mysql: $(MYSQL_TARGET_LIB)
 
 examples: $(PGSQL_EXAMPLE_EXE) $(MYSQL_EXAMPLE_EXE) $(MYSQL_SET_EXAMPLE_EXE) $(MYSQL_STDIN_EXAMPLE_EXE)
-tests: $(TEST_REGEXES_PARITY)
+tests: $(TEST_REGEXES_PARITY) $(TEST_PERF_DIFF)
 
 # --- PostgreSQL Rules ---
 $(PGSQL_TARGET_LIB): $(PGSQL_LIB_OBJS)
@@ -222,11 +223,20 @@ $(MYSQL_SET_EXAMPLE_EXE): $(MYSQL_SET_EXAMPLE_OBJS) $(MYSQL_TARGET_LIB)
 	$(LINKER) $(CXXFLAGS) -o $@ $(MYSQL_SET_EXAMPLE_OBJS) -L$(PROJECT_ROOT) -l$(MYSQL_TARGET_LIB_NAME)
 	@echo "Created MySQL SET statement example $@"
 
+$(PROJECT_ROOT)/tests/tests_utils.o: $(PROJECT_ROOT)/tests/tests_utils.cpp $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h
+	$(CXX) $(CXXFLAGS) $(IDIRS) $(CPPFLAGS) -c $< -o $@
+
 $(PROJECT_ROOT)/tests/test_regexes_parity.o: $(PROJECT_ROOT)/tests/test_regexes_parity.cpp $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h
 	$(CXX) $(CXXFLAGS) $(IDIRS) $(CPPFLAGS) -c $< -o $@
 
-$(TEST_REGEXES_PARITY): $(PROJECT_ROOT)/tests/test_regexes_parity.o $(MYSQL_TARGET_LIB)
-	$(LINKER) $(CXXFLAGS) $(IDIRS) $(LDIRS) -o $@ $(PROJECT_ROOT)/tests/test_regexes_parity.o $(PROXYSQL_PATH)/lib/obj/MySQL_Set_Stmt_Parser.oo $(PROXYSQL_PATH)/lib/obj/c_tokenizer.oo $(MYLIBS)
+$(TEST_REGEXES_PARITY): $(PROJECT_ROOT)/tests/test_regexes_parity.o $(PROJECT_ROOT)/tests/tests_utils.o $(MYSQL_TARGET_LIB)
+	$(LINKER) $(CXXFLAGS) $(IDIRS) $(LDIRS) -o $@ $(PROJECT_ROOT)/tests/test_regexes_parity.o $(PROJECT_ROOT)/tests/tests_utils.o $(PROXYSQL_PATH)/lib/obj/MySQL_Set_Stmt_Parser.oo $(PROXYSQL_PATH)/lib/obj/c_tokenizer.oo $(MYLIBS)
+
+$(PROJECT_ROOT)/tests/test_perf_diff.o: $(PROJECT_ROOT)/tests/test_perf_diff.cpp $(MYSQL_PARSER_INCLUDE_DIR)/mysql_parser.h $(MYSQL_PARSER_INCLUDE_DIR)/mysql_ast.h
+	$(CXX) $(CXXFLAGS) $(IDIRS) $(CPPFLAGS) -c $< -o $@
+
+$(TEST_PERF_DIFF): $(PROJECT_ROOT)/tests/test_perf_diff.o $(PROJECT_ROOT)/tests/tests_utils.o $(MYSQL_TARGET_LIB)
+	$(LINKER) $(CXXFLAGS) $(IDIRS) $(LDIRS) -o $@ $(PROJECT_ROOT)/tests/test_perf_diff.o $(PROJECT_ROOT)/tests/tests_utils.o $(PROXYSQL_PATH)/lib/obj/MySQL_Set_Stmt_Parser.oo $(PROXYSQL_PATH)/lib/obj/c_tokenizer.oo $(MYLIBS)
 
 # Rule for MySQL STDIN parser example executable
 $(MYSQL_STDIN_EXAMPLE_EXE): $(MYSQL_STDIN_EXAMPLE_OBJS) $(MYSQL_TARGET_LIB)
